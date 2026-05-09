@@ -15,8 +15,18 @@ struct ContentView: View {
             ReaderWorkspace(
                 document: pdfStore.currentDocument,
                 uploadState: pdfStore.uploadState,
+                highlightSaveState: pdfStore.highlightSaveState,
                 pageCount: $pageCount,
-                onImport: { isImporterPresented = true }
+                onImport: { isImporterPresented = true },
+                onSaveHighlight: { selection in
+                    pdfStore.saveSelectedHighlight(
+                        text: selection.text,
+                        pageNumber: selection.pageNumber
+                    )
+                },
+                onClearHighlightState: {
+                    pdfStore.clearHighlightSaveState()
+                }
             )
         }
         .fileImporter(
@@ -101,10 +111,13 @@ struct ContentView: View {
 private struct ReaderWorkspace: View {
     let document: ImportedPDF?
     let uploadState: PDFUploadState
+    let highlightSaveState: HighlightSaveState
     @Binding var pageCount: Int
     let onImport: () -> Void
+    let onSaveHighlight: (PDFTextSelection) -> Void
+    let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
-    @State private var selectedText = ""
+    @State private var selection = PDFTextSelection.empty
     @State private var selectedQuickAction: QuickAction?
 
     var body: some View {
@@ -113,30 +126,33 @@ private struct ReaderWorkspace: View {
                 PDFKitView(
                     documentURL: document.url,
                     pageCount: $pageCount,
-                    selectedText: $selectedText
+                    selection: $selection
                 )
                     .ignoresSafeArea(edges: .bottom)
                     .navigationTitle(document.title)
                     .overlay(alignment: .bottom) {
-                        if !selectedText.isEmpty {
+                        if !selection.isEmpty {
                             QuickActionPanel(
                                 selectedAction: selectedQuickAction,
-                                onSelect: { selectedQuickAction = $0 }
+                                highlightSaveState: highlightSaveState,
+                                highlightAvailabilityMessage: highlightAvailabilityMessage,
+                                canSaveHighlight: canSaveHighlight,
+                                onSelect: handleQuickAction
                             )
                             .padding(.horizontal, 24)
                             .padding(.bottom, 20)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
-                    .animation(.easeInOut(duration: 0.2), value: selectedText.isEmpty)
-                    .onChange(of: selectedText) { text in
-                        if text.isEmpty {
-                            selectedQuickAction = nil
-                        }
+                    .animation(.easeInOut(duration: 0.2), value: selection.isEmpty)
+                    .onChange(of: selection) { _ in
+                        selectedQuickAction = nil
+                        onClearHighlightState()
                     }
                     .onChange(of: document.id) { _ in
-                        selectedText = ""
+                        selection = .empty
                         selectedQuickAction = nil
+                        onClearHighlightState()
                     }
                     .toolbar {
                         ToolbarItemGroup(placement: .navigationBarTrailing) {
@@ -163,6 +179,45 @@ private struct ReaderWorkspace: View {
                 EmptyReaderState(onImport: onImport)
             }
         }
+    }
+
+    private var canSaveHighlight: Bool {
+        if case .saving = highlightSaveState {
+            return false
+        }
+
+        guard case .uploaded = uploadState else {
+            return false
+        }
+
+        return !selection.text.isEmpty && selection.pageNumber != nil
+    }
+
+    private var highlightAvailabilityMessage: String? {
+        if case .uploaded = uploadState {
+            return selection.pageNumber == nil ? "선택한 페이지를 확인할 수 없습니다." : nil
+        }
+
+        switch uploadState {
+        case .idle:
+            return "Backend document가 아직 없습니다."
+        case .uploading:
+            return "PDF 업로드가 끝난 뒤 저장할 수 있습니다."
+        case .uploaded:
+            return nil
+        case .failed:
+            return "PDF upload 실패 상태에서는 저장할 수 없습니다."
+        }
+    }
+
+    private func handleQuickAction(_ action: QuickAction) {
+        selectedQuickAction = action
+
+        guard action == .highlight else {
+            return
+        }
+
+        onSaveHighlight(selection)
     }
 }
 
@@ -317,6 +372,9 @@ private struct UploadStatusView: View {
 
 private struct QuickActionPanel: View {
     let selectedAction: QuickAction?
+    let highlightSaveState: HighlightSaveState
+    let highlightAvailabilityMessage: String?
+    let canSaveHighlight: Bool
     let onSelect: (QuickAction) -> Void
 
     var body: some View {
@@ -343,7 +401,15 @@ private struct QuickActionPanel: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+                    .disabled(isDisabled(action))
                 }
+            }
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16)
@@ -354,9 +420,38 @@ private struct QuickActionPanel: View {
         }
         .frame(maxWidth: 620)
     }
+
+    private var statusMessage: String? {
+        switch highlightSaveState {
+        case .idle:
+            return highlightAvailabilityMessage
+        case .saving:
+            return "하이라이트 저장 중..."
+        case .saved(let highlight):
+            return "하이라이트 저장됨 · #\(highlight.id)"
+        case .failed(let message):
+            return message
+        }
+    }
+
+    private var statusColor: Color {
+        switch highlightSaveState {
+        case .saved:
+            return .green
+        case .failed:
+            return .red
+        case .idle, .saving:
+            return .secondary
+        }
+    }
+
+    private func isDisabled(_ action: QuickAction) -> Bool {
+        action == .highlight && !canSaveHighlight
+    }
 }
 
 private enum QuickAction: String, CaseIterable, Identifiable {
+    case highlight
     case explain
     case glossary
     case quiz
@@ -367,6 +462,8 @@ private enum QuickAction: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .highlight:
+            return "하이라이트"
         case .explain:
             return "쉽게 설명"
         case .glossary:
@@ -378,6 +475,8 @@ private enum QuickAction: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .highlight:
+            return "highlighter"
         case .explain:
             return "lightbulb"
         case .glossary:
