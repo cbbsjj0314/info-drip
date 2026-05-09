@@ -100,13 +100,40 @@ private struct ReaderWorkspace: View {
     @Binding var pageCount: Int
     let onImport: () -> Void
     @State private var isDocumentInfoPresented = false
+    @State private var selectedText = ""
+    @State private var selectedQuickAction: QuickAction?
 
     var body: some View {
         Group {
             if let document {
-                PDFKitView(documentURL: document.url, pageCount: $pageCount)
+                PDFKitView(
+                    documentURL: document.url,
+                    pageCount: $pageCount,
+                    selectedText: $selectedText
+                )
                     .ignoresSafeArea(edges: .bottom)
                     .navigationTitle(document.title)
+                    .overlay(alignment: .bottom) {
+                        if !selectedText.isEmpty {
+                            QuickActionPanel(
+                                selectedAction: selectedQuickAction,
+                                onSelect: { selectedQuickAction = $0 }
+                            )
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 20)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: selectedText.isEmpty)
+                    .onChange(of: selectedText) { text in
+                        if text.isEmpty {
+                            selectedQuickAction = nil
+                        }
+                    }
+                    .onChange(of: document.id) { _ in
+                        selectedText = ""
+                        selectedQuickAction = nil
+                    }
                     .toolbar {
                         ToolbarItemGroup(placement: .navigationBarTrailing) {
                             Button {
@@ -143,7 +170,7 @@ private struct EmptyReaderState: View {
             VStack(spacing: 8) {
                 Text("Import a PDF to start reading")
                     .font(.title.weight(.semibold))
-                Text("This first iPad slice keeps the document local and opens it in a PDFKit reader.")
+                Text("Choose a PDF, then select a passage while reading to start a study action.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -182,9 +209,9 @@ private struct DocumentInfoView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 12) {
-                Label("Local PDF", systemImage: "internaldrive")
-                Label("PDFKit reader", systemImage: "doc.text.magnifyingglass")
-                Label("Backend upload deferred", systemImage: "network.slash")
+                Label("Stored on this iPad", systemImage: "internaldrive")
+                Label("Select text while reading", systemImage: "text.cursor")
+                Label("Use quick study actions", systemImage: "sparkles")
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -192,6 +219,79 @@ private struct DocumentInfoView: View {
             Spacer()
         }
         .padding(24)
+    }
+}
+
+private struct QuickActionPanel: View {
+    let selectedAction: QuickAction?
+    let onSelect: (QuickAction) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("선택한 문장")
+                        .font(.headline)
+                    Text(selectedAction.map { "\($0.title) 선택됨" } ?? "학습 활동을 고르세요")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                ForEach(QuickAction.allCases) { action in
+                    Button {
+                        onSelect(action)
+                    } label: {
+                        Label(action.title, systemImage: action.systemImage)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color(.separator), lineWidth: 0.5)
+        }
+        .frame(maxWidth: 620)
+    }
+}
+
+private enum QuickAction: String, CaseIterable, Identifiable {
+    case explain
+    case glossary
+    case quiz
+
+    var id: String {
+        rawValue
+    }
+
+    var title: String {
+        switch self {
+        case .explain:
+            return "쉽게 설명"
+        case .glossary:
+            return "용어"
+        case .quiz:
+            return "퀴즈"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .explain:
+            return "lightbulb"
+        case .glossary:
+            return "text.book.closed"
+        case .quiz:
+            return "questionmark.circle"
+        }
     }
 }
 
