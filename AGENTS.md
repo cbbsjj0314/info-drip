@@ -142,6 +142,14 @@ Rules:
 - Do not perform git operations unless the user explicitly asks.
 - Do not edit files through remote tools unless the user explicitly asks.
 
+## Code Comments
+
+- Prefer clear names, small functions, and explicit schemas over comments.
+- Add comments only for non-obvious intent, invariants, security boundaries, LLM/data trust boundaries, or deliberate tradeoffs.
+- Do not add comments that merely restate what the code does.
+- Keep code comments in English by default so they fit code-facing identifiers and tool output.
+- Write TODO comments only when they include the concrete future condition, blocker, or decision needed.
+
 ## Default Scope
 
 Keep the MVP local-first.

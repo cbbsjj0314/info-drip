@@ -145,6 +145,51 @@ local docs를 읽을 수 없고 작업 판단에 꼭 필요하면, 어떤 정보
 - branch, commit, PR, issue, label은 사용자가 명시적으로 요청하지 않으면 만들지 않는다.
 - remote tool로 파일을 직접 수정하는 것도 사용자가 명시적으로 요청하지 않으면 하지 않는다.
 
+### 코드 주석 기준
+
+코드 주석은 코드가 이미 말하는 내용을 반복하지 않고, 코드만으로 놓치기 쉬운 의도와 경계를 남기는 용도로 쓴다.
+
+기본 원칙:
+
+- 함수명, 변수명, schema, 작은 함수로 먼저 의미를 드러낸다.
+- `what`보다 `why`를 설명한다.
+- 명백한 할당, 저장, 호출, 반복을 설명하는 주석은 추가하지 않는다.
+- code-facing identifier와 tool output에 맞추기 위해 코드 주석은 영어를 기본으로 쓴다.
+- durable human-facing docs는 기존 문서 경계에 따라 한국어를 기본으로 쓴다.
+
+주석을 추가하기 좋은 경우:
+
+- MVP boundary나 security boundary가 코드만으로 드러나지 않을 때
+- iPad client와 backend의 책임 경계가 헷갈릴 수 있을 때
+- LLM output을 아직 trusted data로 보면 안 되는 지점
+- full PDF text를 보내지 않고 selected text와 surrounding context만 보내는 의도
+- 실패한 LLM 요청도 logging해야 하는 이유
+- PDF page index, storage path, validation 순서처럼 버그가 나기 쉬운 invariant
+- 의도적으로 단순한 구현을 선택했고, 미래 확장과 구분해야 할 때
+
+피해야 할 주석:
+
+- 코드 한 줄을 자연어로 그대로 반복하는 주석
+- 오래 유지될 수 없는 임시 설명
+- 미래 범위를 약속하는 speculative TODO
+- private PDF 내용, local path, token, API key, provider account detail이 포함된 주석
+
+TODO 주석은 필요한 경우에만 쓰고, 다음 조건을 함께 적는다.
+
+- 무엇이 막혀 있는지
+- 어떤 결정이나 기능이 생기면 바꿀지
+- 현재 MVP에서 왜 미루는지
+
+예:
+
+```python
+# Keep selected text separate from surrounding context so prompts can avoid sending full page text.
+```
+
+```python
+# TODO: Replace this with migration-backed storage when schema versioning is introduced.
+```
+
 ---
 
 ## Backend 작업 기준
