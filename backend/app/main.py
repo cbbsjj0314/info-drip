@@ -25,7 +25,7 @@ from app.database import (
     engine,
     get_db_session,
 )
-from app.llm import ExplanationRequest, FakeLLMProvider, LLMProvider
+from app.llm import ExplanationRequest, LLMProvider, build_llm_provider_from_env
 
 UPLOAD_DIR_ENV_VAR = "INFODRIP_UPLOAD_DIR"
 DEFAULT_UPLOAD_DIR = "uploads/documents"
@@ -88,7 +88,7 @@ def get_upload_dir() -> Path:
 
 
 def get_llm_provider() -> LLMProvider:
-    return FakeLLMProvider()
+    return build_llm_provider_from_env()
 
 
 def get_relative_storage_path(path: Path) -> str:
