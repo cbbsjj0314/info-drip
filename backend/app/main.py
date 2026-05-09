@@ -7,12 +7,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database import Base, Document, DocumentPage, engine, get_db_session
+from app.database import Base, Document, DocumentPage, Highlight, engine, get_db_session
 
 UPLOAD_DIR_ENV_VAR = "INFODRIP_UPLOAD_DIR"
 DEFAULT_UPLOAD_DIR = "uploads/documents"
@@ -40,6 +41,22 @@ class DocumentResponse(BaseModel):
     original_filename: str
     storage_path: str
     page_count: int
+    created_at: datetime
+
+
+class HighlightCreateRequest(BaseModel):
+    document_id: int
+    page_number: int = Field(ge=1)
+    selected_text: str = Field(min_length=1)
+
+
+class HighlightResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    page_number: int
+    selected_text: str
     created_at: datetime
 
 
@@ -116,3 +133,43 @@ def upload_document(
     db.refresh(document)
 
     return document
+
+
+@app.post(
+    "/api/v1/highlights",
+    response_model=HighlightResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_highlight(
+    request: HighlightCreateRequest,
+    db: Session = Depends(get_db_session),
+) -> Highlight:
+    document = db.get(Document, request.document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    page_exists = db.scalar(
+        select(DocumentPage.id).where(
+            DocumentPage.document_id == request.document_id,
+            DocumentPage.page_number == request.page_number,
+        )
+    )
+    if page_exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document page not found.",
+        )
+
+    highlight = Highlight(
+        document_id=request.document_id,
+        page_number=request.page_number,
+        selected_text=request.selected_text,
+    )
+    db.add(highlight)
+    db.commit()
+    db.refresh(highlight)
+
+    return highlight

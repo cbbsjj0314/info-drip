@@ -34,6 +34,10 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    highlights: Mapped[list["Highlight"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
 
 
 class DocumentPage(Base):
@@ -49,6 +53,21 @@ class DocumentPage(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="pages")
+
+
+class Highlight(Base):
+    __tablename__ = "highlights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    page_number: Mapped[int]
+    selected_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    document: Mapped[Document] = relationship(back_populates="highlights")
 
 
 engine = create_engine(
