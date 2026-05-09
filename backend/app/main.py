@@ -1,9 +1,11 @@
+import json
 import os
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
@@ -13,7 +15,17 @@ from pypdf.errors import PdfReadError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database import Base, Document, DocumentPage, Highlight, engine, get_db_session
+from app.database import (
+    Base,
+    Document,
+    DocumentPage,
+    Highlight,
+    LLMExplanation,
+    LLMRequestLog,
+    engine,
+    get_db_session,
+)
+from app.llm import ExplanationRequest, FakeLLMProvider, LLMProvider
 
 UPLOAD_DIR_ENV_VAR = "INFODRIP_UPLOAD_DIR"
 DEFAULT_UPLOAD_DIR = "uploads/documents"
@@ -60,8 +72,22 @@ class HighlightResponse(BaseModel):
     created_at: datetime
 
 
+class LLMExplanationResponse(BaseModel):
+    id: int
+    highlight_id: int
+    summary: str
+    key_points: list[str]
+    provider: str
+    model: str
+    created_at: datetime
+
+
 def get_upload_dir() -> Path:
     return Path(os.getenv(UPLOAD_DIR_ENV_VAR, DEFAULT_UPLOAD_DIR))
+
+
+def get_llm_provider() -> LLMProvider:
+    return FakeLLMProvider()
 
 
 def get_relative_storage_path(path: Path) -> str:
@@ -80,6 +106,26 @@ def extract_pdf_page_texts(path: Path) -> list[str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file must be a readable PDF.",
         ) from exc
+
+
+def now_latency_ms(start_time: float) -> int:
+    return max(0, round((perf_counter() - start_time) * 1000))
+
+
+def serialize_key_points(key_points: list[str]) -> str:
+    return json.dumps(key_points, ensure_ascii=True)
+
+
+def explanation_to_response(explanation: LLMExplanation) -> LLMExplanationResponse:
+    return LLMExplanationResponse(
+        id=explanation.id,
+        highlight_id=explanation.highlight_id,
+        summary=explanation.summary,
+        key_points=list(json.loads(explanation.key_points)),
+        provider=explanation.provider,
+        model=explanation.model,
+        created_at=explanation.created_at,
+    )
 
 
 @app.post(
@@ -197,3 +243,82 @@ def list_document_highlights(
             .order_by(Highlight.page_number, Highlight.id)
         )
     )
+
+
+@app.post(
+    "/api/v1/highlights/{highlight_id}/explanations",
+    response_model=LLMExplanationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_highlight_explanation(
+    highlight_id: int,
+    db: Session = Depends(get_db_session),
+    provider: LLMProvider = Depends(get_llm_provider),
+) -> LLMExplanationResponse:
+    highlight = db.get(Highlight, highlight_id)
+    if highlight is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Highlight not found.",
+        )
+
+    provider_name = getattr(provider, "provider", "unknown")
+    model_name = getattr(provider, "model", "unknown")
+    start_time = perf_counter()
+
+    try:
+        llm_response = provider.generate_explanation(
+            ExplanationRequest(selected_text=highlight.selected_text)
+        )
+    except Exception as exc:
+        db.add(
+            LLMRequestLog(
+                provider=provider_name,
+                model=model_name,
+                task_type="explanation",
+                status="error",
+                latency_ms=now_latency_ms(start_time),
+                prompt_tokens=None,
+                completion_tokens=None,
+                total_tokens=None,
+                estimated_cost=None,
+                document_id=highlight.document_id,
+                highlight_id=highlight.id,
+                error_message=str(exc),
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Explanation generation failed.",
+        ) from exc
+
+    explanation = LLMExplanation(
+        document_id=highlight.document_id,
+        highlight_id=highlight.id,
+        summary=llm_response.content.summary,
+        key_points=serialize_key_points(llm_response.content.key_points),
+        provider=llm_response.usage.provider,
+        model=llm_response.usage.model,
+    )
+    db.add(explanation)
+    db.add(
+        LLMRequestLog(
+            provider=llm_response.usage.provider,
+            model=llm_response.usage.model,
+            task_type="explanation",
+            status="success",
+            latency_ms=now_latency_ms(start_time),
+            prompt_tokens=llm_response.usage.prompt_tokens,
+            completion_tokens=llm_response.usage.completion_tokens,
+            total_tokens=llm_response.usage.total_tokens,
+            estimated_cost=llm_response.usage.estimated_cost,
+            document_id=highlight.document_id,
+            highlight_id=highlight.id,
+            error_message=None,
+        )
+    )
+    db.commit()
+    db.refresh(explanation)
+
+    return explanation_to_response(explanation)

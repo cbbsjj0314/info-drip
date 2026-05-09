@@ -39,6 +39,10 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    llm_explanations: Mapped[list["LLMExplanation"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
     llm_request_logs: Mapped[list["LLMRequestLog"]] = relationship(
         back_populates="document",
     )
@@ -72,9 +76,32 @@ class Highlight(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="highlights")
+    llm_explanations: Mapped[list["LLMExplanation"]] = relationship(
+        back_populates="highlight",
+        cascade="all, delete-orphan",
+    )
     llm_request_logs: Mapped[list["LLMRequestLog"]] = relationship(
         back_populates="highlight",
     )
+
+
+class LLMExplanation(Base):
+    __tablename__ = "llm_explanations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    highlight_id: Mapped[int] = mapped_column(ForeignKey("highlights.id"), index=True)
+    summary: Mapped[str] = mapped_column(Text)
+    key_points: Mapped[str] = mapped_column(Text)
+    provider: Mapped[str]
+    model: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    document: Mapped[Document] = relationship(back_populates="llm_explanations")
+    highlight: Mapped[Highlight] = relationship(back_populates="llm_explanations")
 
 
 class LLMRequestLog(Base):

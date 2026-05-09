@@ -13,6 +13,8 @@ InfoDrip MVP backend bootstrap.
 - PDF page count extraction
 - Local upload directory override: `INFODRIP_UPLOAD_DIR`
 - Explanation용 `LLMProvider` interface와 deterministic fake provider
+- Highlight explanation quick action: `POST /api/v1/highlights/{highlight_id}/explanations`
+- LLM explanation persistence와 request logging
 
 ## 환경 변수
 

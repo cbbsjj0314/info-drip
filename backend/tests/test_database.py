@@ -41,6 +41,7 @@ def test_document_tables_can_be_created_from_metadata() -> None:
         "documents",
         "document_pages",
         "highlights",
+        "llm_explanations",
         "llm_request_logs",
     }
 
@@ -94,6 +95,43 @@ def test_document_tables_can_be_created_from_metadata() -> None:
             "referred_columns": ["id"],
             "options": {},
         }
+    ]
+
+    llm_explanation_columns = {
+        column["name"] for column in inspector.get_columns("llm_explanations")
+    }
+    assert llm_explanation_columns == {
+        "id",
+        "document_id",
+        "highlight_id",
+        "summary",
+        "key_points",
+        "provider",
+        "model",
+        "created_at",
+    }
+
+    llm_explanation_foreign_keys = sorted(
+        inspector.get_foreign_keys("llm_explanations"),
+        key=lambda foreign_key: foreign_key["constrained_columns"],
+    )
+    assert llm_explanation_foreign_keys == [
+        {
+            "name": None,
+            "constrained_columns": ["document_id"],
+            "referred_schema": None,
+            "referred_table": "documents",
+            "referred_columns": ["id"],
+            "options": {},
+        },
+        {
+            "name": None,
+            "constrained_columns": ["highlight_id"],
+            "referred_schema": None,
+            "referred_table": "highlights",
+            "referred_columns": ["id"],
+            "options": {},
+        },
     ]
 
     llm_log_columns = {column["name"] for column in inspector.get_columns("llm_request_logs")}
@@ -198,6 +236,56 @@ def test_document_highlight_relationship_persists_highlights() -> None:
         assert len(document.highlights) == 1
         assert document.highlights[0].document_id == document.id
         assert document.highlights[0].document is document
+
+
+def test_llm_explanation_relationship_persists_structured_result() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    database.Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        document = database.Document(
+            title="Sample",
+            original_filename="sample.pdf",
+            storage_path="documents/sample.pdf",
+            page_count=1,
+            pages=[
+                database.DocumentPage(
+                    page_number=1,
+                    text="Sanitized sample page text.",
+                )
+            ],
+            highlights=[
+                database.Highlight(
+                    page_number=1,
+                    selected_text="Sanitized selected text.",
+                )
+            ],
+        )
+        session.add(document)
+        session.flush()
+
+        highlight = document.highlights[0]
+        explanation = database.LLMExplanation(
+            document=document,
+            highlight=highlight,
+            summary="Sanitized explanation summary.",
+            key_points='["First point.", "Second point."]',
+            provider="fake-provider",
+            model="fake-model",
+        )
+
+        session.add(explanation)
+        session.commit()
+        session.refresh(document)
+        session.refresh(highlight)
+
+        assert explanation.id is not None
+        assert explanation.document_id == document.id
+        assert explanation.highlight_id == highlight.id
+        assert explanation.document is document
+        assert explanation.highlight is highlight
+        assert document.llm_explanations == [explanation]
+        assert highlight.llm_explanations == [explanation]
 
 
 def test_llm_request_log_relationships_persist_success_and_error_logs() -> None:
