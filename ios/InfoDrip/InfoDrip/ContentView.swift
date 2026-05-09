@@ -14,6 +14,7 @@ struct ContentView: View {
         } detail: {
             ReaderWorkspace(
                 document: pdfStore.currentDocument,
+                uploadState: pdfStore.uploadState,
                 pageCount: $pageCount,
                 onImport: { isImporterPresented = true }
             )
@@ -66,6 +67,8 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                UploadStatusView(uploadState: pdfStore.uploadState)
             }
 
             Spacer()
@@ -97,6 +100,7 @@ struct ContentView: View {
 
 private struct ReaderWorkspace: View {
     let document: ImportedPDF?
+    let uploadState: PDFUploadState
     @Binding var pageCount: Int
     let onImport: () -> Void
     @State private var isDocumentInfoPresented = false
@@ -148,7 +152,11 @@ private struct ReaderWorkspace: View {
                         }
                     }
                     .sheet(isPresented: $isDocumentInfoPresented) {
-                        DocumentInfoView(document: document, pageCount: pageCount)
+                        DocumentInfoView(
+                            document: document,
+                            uploadState: uploadState,
+                            pageCount: pageCount
+                        )
                             .presentationDetents([.medium])
                     }
             } else {
@@ -191,6 +199,7 @@ private struct EmptyReaderState: View {
 
 private struct DocumentInfoView: View {
     let document: ImportedPDF
+    let uploadState: PDFUploadState
     let pageCount: Int
 
     var body: some View {
@@ -210,6 +219,7 @@ private struct DocumentInfoView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Label("Stored on this iPad", systemImage: "internaldrive")
+                backendDocumentLabel
                 Label("Select text while reading", systemImage: "text.cursor")
                 Label("Use quick study actions", systemImage: "sparkles")
             }
@@ -219,6 +229,89 @@ private struct DocumentInfoView: View {
             Spacer()
         }
         .padding(24)
+    }
+
+    private var backendDocumentLabel: some View {
+        switch uploadState {
+        case .idle:
+            return Label("Not uploaded to backend", systemImage: "icloud.slash")
+        case .uploading:
+            return Label("Uploading to backend", systemImage: "icloud.and.arrow.up")
+        case .uploaded(let backendDocument):
+            return Label(
+                "Backend document #\(backendDocument.id) · \(backendDocument.pageCount) pages",
+                systemImage: "checkmark.icloud"
+            )
+        case .failed:
+            return Label("Backend upload failed", systemImage: "exclamationmark.icloud")
+        }
+    }
+}
+
+private struct UploadStatusView: View {
+    let uploadState: PDFUploadState
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            statusIcon
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        switch uploadState {
+        case .uploading:
+            ProgressView()
+                .controlSize(.small)
+        case .uploaded:
+            Image(systemName: "checkmark.icloud")
+                .foregroundStyle(.green)
+        case .failed:
+            Image(systemName: "exclamationmark.icloud")
+                .foregroundStyle(.red)
+        case .idle:
+            Image(systemName: "icloud.slash")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var title: String {
+        switch uploadState {
+        case .idle:
+            return "Backend not linked"
+        case .uploading:
+            return "Uploading PDF"
+        case .uploaded:
+            return "Backend linked"
+        case .failed:
+            return "Upload failed"
+        }
+    }
+
+    private var detail: String {
+        switch uploadState {
+        case .idle:
+            return "Import a PDF to create a backend document."
+        case .uploading:
+            return "Creating backend document record."
+        case .uploaded(let backendDocument):
+            return "Document #\(backendDocument.id) is ready for highlights."
+        case .failed(let message):
+            return message
+        }
     }
 }
 
