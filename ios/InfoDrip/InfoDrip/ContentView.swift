@@ -99,26 +99,31 @@ private struct ReaderWorkspace: View {
     let document: ImportedPDF?
     @Binding var pageCount: Int
     let onImport: () -> Void
+    @State private var isDocumentInfoPresented = false
 
     var body: some View {
         Group {
             if let document {
-                HStack(spacing: 0) {
-                    PDFKitView(documentURL: document.url, pageCount: $pageCount)
-                        .ignoresSafeArea(edges: .bottom)
+                PDFKitView(documentURL: document.url, pageCount: $pageCount)
+                    .ignoresSafeArea(edges: .bottom)
+                    .navigationTitle(document.title)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .navigationBarTrailing) {
+                            Button {
+                                isDocumentInfoPresented = true
+                            } label: {
+                                Label("Document Info", systemImage: "info.circle")
+                            }
 
-                    ReaderInspector(document: document, pageCount: pageCount, onImport: onImport)
-                        .frame(width: 280)
-                        .background(Color(.secondarySystemGroupedBackground))
-                }
-                .navigationTitle(document.title)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: onImport) {
-                            Label("Import PDF", systemImage: "doc.badge.plus")
+                            Button(action: onImport) {
+                                Label("Import PDF", systemImage: "doc.badge.plus")
+                            }
                         }
                     }
-                }
+                    .sheet(isPresented: $isDocumentInfoPresented) {
+                        DocumentInfoView(document: document, pageCount: pageCount)
+                            .presentationDetents([.medium])
+                    }
             } else {
                 EmptyReaderState(onImport: onImport)
             }
@@ -157,19 +162,18 @@ private struct EmptyReaderState: View {
     }
 }
 
-private struct ReaderInspector: View {
+private struct DocumentInfoView: View {
     let document: ImportedPDF
     let pageCount: Int
-    let onImport: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Reading")
-                    .font(.headline)
+                Text("Document")
+                    .font(.title2.weight(.semibold))
                 Text(document.title)
                     .font(.title3.weight(.semibold))
-                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(pageCount == 1 ? "1 page" : "\(pageCount) pages")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -186,13 +190,6 @@ private struct ReaderInspector: View {
             .foregroundStyle(.secondary)
 
             Spacer()
-
-            Button(action: onImport) {
-                Label("Import another PDF", systemImage: "arrow.triangle.2.circlepath")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
         }
         .padding(24)
     }
