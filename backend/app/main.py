@@ -29,6 +29,7 @@ from app.llm import ExplanationRequest, FakeLLMProvider, LLMProvider
 
 UPLOAD_DIR_ENV_VAR = "INFODRIP_UPLOAD_DIR"
 DEFAULT_UPLOAD_DIR = "uploads/documents"
+PROVIDER_REQUEST_FAILED_MESSAGE = "Provider request failed."
 
 
 @asynccontextmanager
@@ -114,6 +115,10 @@ def now_latency_ms(start_time: float) -> int:
 
 def serialize_key_points(key_points: list[str]) -> str:
     return json.dumps(key_points, ensure_ascii=True)
+
+
+def sanitize_provider_error_message(_: Exception) -> str:
+    return PROVIDER_REQUEST_FAILED_MESSAGE
 
 
 def explanation_to_response(explanation: LLMExplanation) -> LLMExplanationResponse:
@@ -284,7 +289,7 @@ def create_highlight_explanation(
                 estimated_cost=None,
                 document_id=highlight.document_id,
                 highlight_id=highlight.id,
-                error_message=str(exc),
+                error_message=sanitize_provider_error_message(exc),
             )
         )
         db.commit()

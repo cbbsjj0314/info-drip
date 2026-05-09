@@ -362,7 +362,7 @@ def test_create_highlight_explanation_logs_provider_failure() -> None:
         model = "fake-explanation-v1"
 
         def generate_explanation(self, request: ExplanationRequest) -> ExplanationResponse:
-            raise RuntimeError("sanitized provider failure")
+            raise RuntimeError
 
     override_app_db_session(test_session)
     app.dependency_overrides[get_llm_provider] = FailingProvider
@@ -389,6 +389,6 @@ def test_create_highlight_explanation_logs_provider_failure() -> None:
             assert log.completion_tokens is None
             assert log.total_tokens is None
             assert log.estimated_cost is None
-            assert log.error_message == "sanitized provider failure"
+            assert log.error_message == "Provider request failed."
     finally:
         app.dependency_overrides.clear()
