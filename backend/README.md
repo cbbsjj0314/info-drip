@@ -12,7 +12,7 @@ InfoDrip MVP backend bootstrap.
 - PDF upload: `POST /api/v1/documents`
 - PDF page count extraction
 - Local upload directory override: `INFODRIP_UPLOAD_DIR`
-- LLM provider는 아직 구현하지 않음
+- Explanation용 `LLMProvider` interface와 deterministic fake provider
 
 ## 환경 변수
 
