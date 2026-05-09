@@ -130,3 +130,101 @@ def test_create_highlight_rejects_missing_page_number() -> None:
         assert response.json() == {"detail": "Document page not found."}
     finally:
         app.dependency_overrides.clear()
+
+
+def test_list_document_highlights_returns_stable_page_order() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(
+        test_session,
+        ["First page text.", "Second page text."],
+    )
+    other_document_id = create_document_with_pages(test_session, ["Other page text."])
+
+    with test_session() as session:
+        session.add_all(
+            [
+                database.Highlight(
+                    document_id=document_id,
+                    page_number=2,
+                    selected_text="Second page selection.",
+                ),
+                database.Highlight(
+                    document_id=document_id,
+                    page_number=1,
+                    selected_text="First page selection.",
+                ),
+                database.Highlight(
+                    document_id=document_id,
+                    page_number=1,
+                    selected_text="Second selection on first page.",
+                ),
+                database.Highlight(
+                    document_id=other_document_id,
+                    page_number=1,
+                    selected_text="Other document selection.",
+                ),
+            ]
+        )
+        session.commit()
+
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get(f"/api/v1/documents/{document_id}/highlights")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert [
+            (item["page_number"], item["selected_text"]) for item in payload
+        ] == [
+            (1, "First page selection."),
+            (1, "Second selection on first page."),
+            (2, "Second page selection."),
+        ]
+        assert {item["document_id"] for item in payload} == {document_id}
+        required_keys = {
+            "id",
+            "document_id",
+            "page_number",
+            "selected_text",
+            "created_at",
+        }
+        assert all(required_keys <= item.keys() for item in payload)
+        assert [(item["page_number"], item["id"]) for item in payload] == sorted(
+            (item["page_number"], item["id"]) for item in payload
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_document_highlights_returns_empty_list_without_highlights() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(test_session, ["Only page text."])
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get(f"/api/v1/documents/{document_id}/highlights")
+
+        assert response.status_code == 200
+        assert response.json() == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_document_highlights_rejects_missing_document() -> None:
+    test_session = build_test_session()
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/v1/documents/404/highlights")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Document not found."}
+    finally:
+        app.dependency_overrides.clear()

@@ -173,3 +173,27 @@ def create_highlight(
     db.refresh(highlight)
 
     return highlight
+
+
+@app.get(
+    "/api/v1/documents/{document_id}/highlights",
+    response_model=list[HighlightResponse],
+)
+def list_document_highlights(
+    document_id: int,
+    db: Session = Depends(get_db_session),
+) -> list[Highlight]:
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    return list(
+        db.scalars(
+            select(Highlight)
+            .where(Highlight.document_id == document_id)
+            .order_by(Highlight.page_number, Highlight.id)
+        )
+    )
