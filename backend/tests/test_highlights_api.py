@@ -13,7 +13,7 @@ from app.llm import (
     ExplanationResponse,
     LLMUsageMetadata,
 )
-from app.main import app, get_llm_provider
+from app.main import PAGE_CONTEXT_MAX_CHARS, app, get_llm_provider
 
 
 def build_test_session() -> sessionmaker[Session]:
@@ -39,10 +39,12 @@ def override_app_db_session(
 def create_document_with_pages(
     test_session: sessionmaker[Session],
     page_texts: list[str],
+    *,
+    title: str = "Sample",
 ) -> int:
     with test_session() as session:
         document = database.Document(
-            title="Sample",
+            title=title,
             original_filename="sample.pdf",
             storage_path="documents/sample.pdf",
             page_count=len(page_texts),
@@ -239,11 +241,15 @@ def test_list_document_highlights_rejects_missing_document() -> None:
 
 def test_create_highlight_explanation_stores_result_and_success_log() -> None:
     test_session = build_test_session()
-    document_id = create_document_with_pages(test_session, ["Page text."])
+    document_id = create_document_with_pages(
+        test_session,
+        ["First page text.", "Same page context for selected text."],
+        title="Learning Sample",
+    )
     with test_session() as session:
         highlight = database.Highlight(
             document_id=document_id,
-            page_number=1,
+            page_number=2,
             selected_text="Sanitized selected text.",
         )
         session.add(highlight)
@@ -295,7 +301,11 @@ def test_create_highlight_explanation_stores_result_and_success_log() -> None:
         assert payload["model"] == "fake-explanation-v1"
         assert "created_at" in payload
         assert captured_requests == [
-            ExplanationRequest(selected_text="Sanitized selected text.")
+            ExplanationRequest(
+                selected_text="Sanitized selected text.",
+                surrounding_context="Same page context for selected text.",
+                document_title="Learning Sample",
+            )
         ]
 
         with test_session() as session:
@@ -320,6 +330,136 @@ def test_create_highlight_explanation_stores_result_and_success_log() -> None:
             assert log.total_tokens == 8
             assert log.estimated_cost == Decimal("0.000000")
             assert log.error_message is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_explanation_caps_page_context_before_provider_call() -> None:
+    test_session = build_test_session()
+    long_context = "A" * (PAGE_CONTEXT_MAX_CHARS + 200)
+    document_id = create_document_with_pages(
+        test_session,
+        ["Other page context.", long_context],
+        title="Long Context Sample",
+    )
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=2,
+            selected_text="Selected text.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    captured_requests: list[ExplanationRequest] = []
+
+    class CapturingProvider:
+        provider = "fake"
+        model = "fake-explanation-v1"
+
+        def generate_explanation(
+            self,
+            request: ExplanationRequest,
+        ) -> ExplanationResponse:
+            captured_requests.append(request)
+            return ExplanationResponse(
+                content=ExplanationContent(
+                    summary="Stored fake summary.",
+                    key_points=["Point."],
+                ),
+                usage=LLMUsageMetadata(
+                    provider=self.provider,
+                    model=self.model,
+                    prompt_tokens=3,
+                    completion_tokens=5,
+                    total_tokens=8,
+                    estimated_cost=Decimal("0.000000"),
+                ),
+            )
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = CapturingProvider
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(f"/api/v1/highlights/{highlight_id}/explanations")
+
+        assert response.status_code == 201
+        assert captured_requests == [
+            ExplanationRequest(
+                selected_text="Selected text.",
+                surrounding_context="A" * PAGE_CONTEXT_MAX_CHARS,
+                document_title="Long Context Sample",
+            )
+        ]
+        assert "Other page context." not in captured_requests[0].surrounding_context
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_explanation_handles_missing_page_context() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(
+        test_session,
+        ["Existing page context."],
+        title="Missing Page Sample",
+    )
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=2,
+            selected_text="Selected text.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    captured_requests: list[ExplanationRequest] = []
+
+    class CapturingProvider:
+        provider = "fake"
+        model = "fake-explanation-v1"
+
+        def generate_explanation(
+            self,
+            request: ExplanationRequest,
+        ) -> ExplanationResponse:
+            captured_requests.append(request)
+            return ExplanationResponse(
+                content=ExplanationContent(
+                    summary="Stored fake summary.",
+                    key_points=["Point."],
+                ),
+                usage=LLMUsageMetadata(
+                    provider=self.provider,
+                    model=self.model,
+                    prompt_tokens=3,
+                    completion_tokens=5,
+                    total_tokens=8,
+                    estimated_cost=Decimal("0.000000"),
+                ),
+            )
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = CapturingProvider
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(f"/api/v1/highlights/{highlight_id}/explanations")
+
+        assert response.status_code == 201
+        assert captured_requests == [
+            ExplanationRequest(
+                selected_text="Selected text.",
+                surrounding_context=None,
+                document_title="Missing Page Sample",
+            )
+        ]
     finally:
         app.dependency_overrides.clear()
 

@@ -30,6 +30,7 @@ from app.llm import ExplanationRequest, LLMProvider, build_llm_provider_from_env
 UPLOAD_DIR_ENV_VAR = "INFODRIP_UPLOAD_DIR"
 DEFAULT_UPLOAD_DIR = "uploads/documents"
 PROVIDER_REQUEST_FAILED_MESSAGE = "Provider request failed."
+PAGE_CONTEXT_MAX_CHARS = 4000
 
 
 @asynccontextmanager
@@ -119,6 +120,33 @@ def serialize_key_points(key_points: list[str]) -> str:
 
 def sanitize_provider_error_message(_: Exception) -> str:
     return PROVIDER_REQUEST_FAILED_MESSAGE
+
+
+def bounded_page_context(page_text: str | None) -> str | None:
+    if page_text is None:
+        return None
+
+    stripped = page_text.strip()
+    if not stripped:
+        return None
+
+    return stripped[:PAGE_CONTEXT_MAX_CHARS]
+
+
+def build_explanation_request(db: Session, highlight: Highlight) -> ExplanationRequest:
+    document = db.get(Document, highlight.document_id)
+    page_text = db.scalar(
+        select(DocumentPage.text).where(
+            DocumentPage.document_id == highlight.document_id,
+            DocumentPage.page_number == highlight.page_number,
+        )
+    )
+
+    return ExplanationRequest(
+        selected_text=highlight.selected_text,
+        surrounding_context=bounded_page_context(page_text),
+        document_title=document.title if document is not None else None,
+    )
 
 
 def explanation_to_response(explanation: LLMExplanation) -> LLMExplanationResponse:
@@ -273,7 +301,7 @@ def create_highlight_explanation(
 
     try:
         llm_response = provider.generate_explanation(
-            ExplanationRequest(selected_text=highlight.selected_text)
+            build_explanation_request(db, highlight)
         )
     except Exception as exc:
         db.add(
