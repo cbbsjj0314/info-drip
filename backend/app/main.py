@@ -12,7 +12,7 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy.orm import Session
 
-from app.database import Base, Document, engine, get_db_session
+from app.database import Base, Document, DocumentPage, engine, get_db_session
 
 UPLOAD_DIR_ENV_VAR = "INFODRIP_UPLOAD_DIR"
 DEFAULT_UPLOAD_DIR = "uploads/documents"
@@ -54,9 +54,10 @@ def get_relative_storage_path(path: Path) -> str:
         return path.as_posix()
 
 
-def extract_pdf_page_count(path: Path) -> int:
+def extract_pdf_page_texts(path: Path) -> list[str]:
     try:
-        return len(PdfReader(path).pages)
+        reader = PdfReader(path)
+        return [page.extract_text() or "" for page in reader.pages]
     except (PdfReadError, OSError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -88,7 +89,7 @@ def upload_document(
         with destination.open("wb") as output:
             shutil.copyfileobj(file.file, output)
 
-        page_count = extract_pdf_page_count(destination)
+        page_texts = extract_pdf_page_texts(destination)
     except Exception:
         destination.unlink(missing_ok=True)
         raise
@@ -99,10 +100,19 @@ def upload_document(
         title=Path(original_filename).stem,
         original_filename=original_filename,
         storage_path=get_relative_storage_path(destination),
-        page_count=page_count,
+        page_count=len(page_texts),
+        pages=[
+            DocumentPage(page_number=index, text=text)
+            for index, text in enumerate(page_texts, start=1)
+        ],
     )
-    db.add(document)
-    db.commit()
+    try:
+        db.add(document)
+        db.commit()
+    except Exception:
+        db.rollback()
+        destination.unlink(missing_ok=True)
+        raise
     db.refresh(document)
 
     return document
