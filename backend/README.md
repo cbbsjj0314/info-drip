@@ -6,7 +6,16 @@ InfoDrip MVP backend bootstrap.
 
 - FastAPI application entrypoint: `app.main:app`
 - Health check: `GET /health`
-- Database, PDF upload, LLM provider는 아직 구현하지 않음
+- SQLite database engine/session skeleton
+- SQLAlchemy 2.x `DeclarativeBase`
+- Database URL override: `INFODRIP_DATABASE_URL`
+- PDF upload, LLM provider는 아직 구현하지 않음
+
+## 환경 변수
+
+```bash
+INFODRIP_DATABASE_URL=sqlite:///./info_drip.db
+```
 
 ## 실행
 
