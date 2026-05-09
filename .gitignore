@@ -1,0 +1,30 @@
+# Local working board
+docs/local/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+
+# Backend local data
+backend/data/
+backend/uploads/
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+
+# macOS
+.DS_Store
+
+# Xcode
+*.xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
