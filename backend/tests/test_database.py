@@ -1,4 +1,5 @@
 from contextlib import suppress
+from decimal import Decimal
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session
@@ -40,6 +41,7 @@ def test_document_tables_can_be_created_from_metadata() -> None:
         "documents",
         "document_pages",
         "highlights",
+        "llm_request_logs",
     }
 
     document_columns = {column["name"] for column in inspector.get_columns("documents")}
@@ -92,6 +94,47 @@ def test_document_tables_can_be_created_from_metadata() -> None:
             "referred_columns": ["id"],
             "options": {},
         }
+    ]
+
+    llm_log_columns = {column["name"] for column in inspector.get_columns("llm_request_logs")}
+    assert llm_log_columns == {
+        "id",
+        "provider",
+        "model",
+        "task_type",
+        "status",
+        "latency_ms",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost",
+        "document_id",
+        "highlight_id",
+        "error_message",
+        "created_at",
+    }
+
+    llm_log_foreign_keys = sorted(
+        inspector.get_foreign_keys("llm_request_logs"),
+        key=lambda foreign_key: foreign_key["constrained_columns"],
+    )
+    assert llm_log_foreign_keys == [
+        {
+            "name": None,
+            "constrained_columns": ["document_id"],
+            "referred_schema": None,
+            "referred_table": "documents",
+            "referred_columns": ["id"],
+            "options": {},
+        },
+        {
+            "name": None,
+            "constrained_columns": ["highlight_id"],
+            "referred_schema": None,
+            "referred_table": "highlights",
+            "referred_columns": ["id"],
+            "options": {},
+        },
     ]
 
 
@@ -155,3 +198,75 @@ def test_document_highlight_relationship_persists_highlights() -> None:
         assert len(document.highlights) == 1
         assert document.highlights[0].document_id == document.id
         assert document.highlights[0].document is document
+
+
+def test_llm_request_log_relationships_persist_success_and_error_logs() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    database.Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        document = database.Document(
+            title="Sample",
+            original_filename="sample.pdf",
+            storage_path="documents/sample.pdf",
+            page_count=1,
+            pages=[
+                database.DocumentPage(
+                    page_number=1,
+                    text="Sanitized sample page text.",
+                )
+            ],
+            highlights=[
+                database.Highlight(
+                    page_number=1,
+                    selected_text="Sanitized selected text.",
+                )
+            ],
+        )
+        session.add(document)
+        session.flush()
+
+        highlight = document.highlights[0]
+        success_log = database.LLMRequestLog(
+            provider="fake-provider",
+            model="fake-model",
+            task_type="explanation",
+            status="success",
+            latency_ms=123,
+            prompt_tokens=10,
+            completion_tokens=20,
+            total_tokens=30,
+            estimated_cost=Decimal("0.000123"),
+            document=document,
+            highlight=highlight,
+        )
+        error_log = database.LLMRequestLog(
+            provider="fake-provider",
+            model="fake-model",
+            task_type="explanation",
+            status="error",
+            latency_ms=None,
+            prompt_tokens=None,
+            completion_tokens=None,
+            total_tokens=None,
+            estimated_cost=None,
+            error_message="Sanitized provider error.",
+        )
+
+        session.add_all([success_log, error_log])
+        session.commit()
+        session.refresh(document)
+        session.refresh(highlight)
+
+        assert success_log.id is not None
+        assert success_log.document_id == document.id
+        assert success_log.highlight_id == highlight.id
+        assert success_log.document is document
+        assert success_log.highlight is highlight
+        assert document.llm_request_logs == [success_log]
+        assert highlight.llm_request_logs == [success_log]
+
+        assert error_log.id is not None
+        assert error_log.document_id is None
+        assert error_log.highlight_id is None
+        assert error_log.error_message == "Sanitized provider error."
