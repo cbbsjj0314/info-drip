@@ -71,6 +71,30 @@ struct BackendExplanation: Equatable, Decodable {
     }
 }
 
+struct BackendGlossaryTerm: Equatable, Decodable {
+    let id: Int
+    let documentID: Int
+    let highlightID: Int
+    let term: String
+    let definition: String
+    let sourceText: String?
+    let provider: String
+    let model: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case documentID = "document_id"
+        case highlightID = "highlight_id"
+        case term
+        case definition
+        case sourceText = "source_text"
+        case provider
+        case model
+        case createdAt = "created_at"
+    }
+}
+
 enum PDFUploadState: Equatable {
     case idle
     case uploading
@@ -89,6 +113,13 @@ enum ExplanationState: Equatable {
     case idle
     case loading
     case loaded(BackendExplanation)
+    case failed(String)
+}
+
+enum GlossaryState: Equatable {
+    case idle
+    case loading
+    case loaded([BackendGlossaryTerm])
     case failed(String)
 }
 
@@ -179,6 +210,28 @@ struct BackendAPIClient {
         return try JSONDecoder().decode(BackendExplanation.self, from: data)
     }
 
+    func createGlossaryTerms(highlightID: Int) async throws -> [BackendGlossaryTerm] {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/highlights")
+            .appendingPathComponent(String(highlightID))
+            .appendingPathComponent("glossary-terms")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 201 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode([BackendGlossaryTerm].self, from: data)
+    }
+
     private func multipartBody(fileURL: URL, fieldName: String, boundary: String) throws -> Data {
         var body = Data()
         let filename = fileURL.lastPathComponent
@@ -236,6 +289,7 @@ final class LocalPDFStore: ObservableObject {
     @Published private(set) var uploadState: PDFUploadState = .idle
     @Published private(set) var highlightSaveState: HighlightSaveState = .idle
     @Published private(set) var explanationState: ExplanationState = .idle
+    @Published private(set) var glossaryState: GlossaryState = .idle
     @Published private(set) var lastSavedHighlight: BackendHighlight?
 
     private let apiClient: BackendAPIClient
@@ -254,6 +308,7 @@ final class LocalPDFStore: ObservableObject {
         uploadState = .uploading
         highlightSaveState = .idle
         explanationState = .idle
+        glossaryState = .idle
         lastSavedHighlight = nil
 
         Task {
@@ -318,6 +373,34 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
+    func createGlossaryTermsForSelection(text: String, pageNumber: Int?) {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            glossaryState = .failed("Backend document is not ready.")
+            return
+        }
+
+        guard let pageNumber else {
+            glossaryState = .failed("Could not find the selected page.")
+            return
+        }
+
+        let selectedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedText.isEmpty else {
+            glossaryState = .failed("Select text before requesting glossary terms.")
+            return
+        }
+
+        glossaryState = .loading
+
+        Task {
+            await createGlossaryTerms(
+                documentID: backendDocument.id,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+        }
+    }
+
     func clearHighlightSaveState() {
         highlightSaveState = .idle
         lastSavedHighlight = nil
@@ -325,6 +408,10 @@ final class LocalPDFStore: ObservableObject {
 
     func clearExplanationState() {
         explanationState = .idle
+    }
+
+    func clearGlossaryState() {
+        glossaryState = .idle
     }
 
     private func upload(documentID: UUID, fileURL: URL) async {
@@ -369,7 +456,7 @@ final class LocalPDFStore: ObservableObject {
 
     private func explainSelection(documentID: Int, pageNumber: Int, selectedText: String) async {
         do {
-            let highlight = try await highlightForExplanation(
+            let highlight = try await highlightForCurrentSelection(
                 documentID: documentID,
                 pageNumber: pageNumber,
                 selectedText: selectedText
@@ -394,7 +481,34 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
-    private func highlightForExplanation(
+    private func createGlossaryTerms(documentID: Int, pageNumber: Int, selectedText: String) async {
+        do {
+            let highlight = try await highlightForCurrentSelection(
+                documentID: documentID,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+            let glossaryTerms = try await apiClient.createGlossaryTerms(highlightID: highlight.id)
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            lastSavedHighlight = highlight
+            highlightSaveState = .saved(highlight)
+            glossaryState = .loaded(glossaryTerms)
+        } catch {
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            if case .saving = highlightSaveState {
+                highlightSaveState = .failed(error.localizedDescription)
+            }
+            glossaryState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func highlightForCurrentSelection(
         documentID: Int,
         pageNumber: Int,
         selectedText: String
