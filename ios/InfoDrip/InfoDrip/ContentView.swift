@@ -16,6 +16,7 @@ struct ContentView: View {
                 document: pdfStore.currentDocument,
                 uploadState: pdfStore.uploadState,
                 highlightSaveState: pdfStore.highlightSaveState,
+                explanationState: pdfStore.explanationState,
                 pageCount: $pageCount,
                 onImport: { isImporterPresented = true },
                 onSaveHighlight: { selection in
@@ -24,8 +25,15 @@ struct ContentView: View {
                         pageNumber: selection.pageNumber
                     )
                 },
+                onExplain: { selection in
+                    pdfStore.explainSelectedHighlight(
+                        text: selection.text,
+                        pageNumber: selection.pageNumber
+                    )
+                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
+                    pdfStore.clearExplanationState()
                 }
             )
         }
@@ -112,9 +120,11 @@ private struct ReaderWorkspace: View {
     let document: ImportedPDF?
     let uploadState: PDFUploadState
     let highlightSaveState: HighlightSaveState
+    let explanationState: ExplanationState
     @Binding var pageCount: Int
     let onImport: () -> Void
     let onSaveHighlight: (PDFTextSelection) -> Void
+    let onExplain: (PDFTextSelection) -> Void
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
     @State private var selection = PDFTextSelection.empty
@@ -135,6 +145,7 @@ private struct ReaderWorkspace: View {
                             QuickActionPanel(
                                 selectedAction: selectedQuickAction,
                                 highlightSaveState: highlightSaveState,
+                                explanationState: explanationState,
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canSaveHighlight: canSaveHighlight,
                                 onSelect: handleQuickAction
@@ -186,6 +197,10 @@ private struct ReaderWorkspace: View {
             return false
         }
 
+        if case .loading = explanationState {
+            return false
+        }
+
         guard case .uploaded = uploadState else {
             return false
         }
@@ -213,11 +228,14 @@ private struct ReaderWorkspace: View {
     private func handleQuickAction(_ action: QuickAction) {
         selectedQuickAction = action
 
-        guard action == .highlight else {
+        switch action {
+        case .highlight:
+            onSaveHighlight(selection)
+        case .explain:
+            onExplain(selection)
+        case .glossary, .quiz:
             return
         }
-
-        onSaveHighlight(selection)
     }
 }
 
@@ -373,6 +391,7 @@ private struct UploadStatusView: View {
 private struct QuickActionPanel: View {
     let selectedAction: QuickAction?
     let highlightSaveState: HighlightSaveState
+    let explanationState: ExplanationState
     let highlightAvailabilityMessage: String?
     let canSaveHighlight: Bool
     let onSelect: (QuickAction) -> Void
@@ -411,6 +430,8 @@ private struct QuickActionPanel: View {
                     .foregroundStyle(statusColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            explanationContent
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -422,19 +443,43 @@ private struct QuickActionPanel: View {
     }
 
     private var statusMessage: String? {
-        switch highlightSaveState {
-        case .idle:
-            return highlightAvailabilityMessage
-        case .saving:
-            return "하이라이트 저장 중..."
-        case .saved(let highlight):
-            return "하이라이트 저장됨 · #\(highlight.id)"
-        case .failed(let message):
-            return message
+        if selectedAction == .explain {
+            switch explanationState {
+            case .idle:
+                return highlightAvailabilityMessage
+            case .loading:
+                return "설명을 생성하는 중..."
+            case .loaded(let explanation):
+                return "설명 생성됨 · #\(explanation.id)"
+            case .failed(let message):
+                return message
+            }
+        } else {
+            switch highlightSaveState {
+            case .idle:
+                return highlightAvailabilityMessage
+            case .saving:
+                return "하이라이트 저장 중..."
+            case .saved(let highlight):
+                return "하이라이트 저장됨 · #\(highlight.id)"
+            case .failed(let message):
+                return message
+            }
         }
     }
 
     private var statusColor: Color {
+        if selectedAction == .explain {
+            switch explanationState {
+            case .loaded:
+                return .green
+            case .failed:
+                return .red
+            case .idle, .loading:
+                return .secondary
+            }
+        }
+
         switch highlightSaveState {
         case .saved:
             return .green
@@ -445,8 +490,59 @@ private struct QuickActionPanel: View {
         }
     }
 
+    @ViewBuilder
+    private var explanationContent: some View {
+        if selectedAction == .explain {
+            switch explanationState {
+            case .loading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("선택한 문장을 backend에서 설명으로 바꾸고 있습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .loaded(let explanation):
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(explanation.summary)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !explanation.keyPoints.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("핵심 포인트")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            ForEach(explanation.keyPoints, id: \.self) { point in
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(.green)
+                                    Text(point)
+                                        .font(.caption)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            case .failed, .idle:
+                EmptyView()
+            }
+        }
+    }
+
     private func isDisabled(_ action: QuickAction) -> Bool {
-        action == .highlight && !canSaveHighlight
+        switch action {
+        case .highlight, .explain:
+            return !canSaveHighlight
+        case .glossary, .quiz:
+            return false
+        }
     }
 }
 
