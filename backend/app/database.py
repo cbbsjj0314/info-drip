@@ -43,6 +43,10 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    glossary_terms: Mapped[list["GlossaryTerm"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
     llm_request_logs: Mapped[list["LLMRequestLog"]] = relationship(
         back_populates="document",
     )
@@ -80,6 +84,9 @@ class Highlight(Base):
         back_populates="highlight",
         cascade="all, delete-orphan",
     )
+    glossary_terms: Mapped[list["GlossaryTerm"]] = relationship(
+        back_populates="highlight",
+    )
     llm_request_logs: Mapped[list["LLMRequestLog"]] = relationship(
         back_populates="highlight",
     )
@@ -102,6 +109,26 @@ class LLMExplanation(Base):
 
     document: Mapped[Document] = relationship(back_populates="llm_explanations")
     highlight: Mapped[Highlight] = relationship(back_populates="llm_explanations")
+
+
+class GlossaryTerm(Base):
+    __tablename__ = "glossary_terms"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    highlight_id: Mapped[int] = mapped_column(ForeignKey("highlights.id"), index=True)
+    term: Mapped[str]
+    definition: Mapped[str] = mapped_column(Text)
+    source_text: Mapped[str | None] = mapped_column(Text)
+    provider: Mapped[str]
+    model: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    document: Mapped[Document] = relationship(back_populates="glossary_terms")
+    highlight: Mapped[Highlight] = relationship(back_populates="glossary_terms")
 
 
 class LLMRequestLog(Base):

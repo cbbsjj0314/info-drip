@@ -40,6 +40,7 @@ def test_document_tables_can_be_created_from_metadata() -> None:
     assert set(inspector.get_table_names()) >= {
         "documents",
         "document_pages",
+        "glossary_terms",
         "highlights",
         "llm_explanations",
         "llm_request_logs",
@@ -116,6 +117,44 @@ def test_document_tables_can_be_created_from_metadata() -> None:
         key=lambda foreign_key: foreign_key["constrained_columns"],
     )
     assert llm_explanation_foreign_keys == [
+        {
+            "name": None,
+            "constrained_columns": ["document_id"],
+            "referred_schema": None,
+            "referred_table": "documents",
+            "referred_columns": ["id"],
+            "options": {},
+        },
+        {
+            "name": None,
+            "constrained_columns": ["highlight_id"],
+            "referred_schema": None,
+            "referred_table": "highlights",
+            "referred_columns": ["id"],
+            "options": {},
+        },
+    ]
+
+    glossary_term_columns = {
+        column["name"] for column in inspector.get_columns("glossary_terms")
+    }
+    assert glossary_term_columns == {
+        "id",
+        "document_id",
+        "highlight_id",
+        "term",
+        "definition",
+        "source_text",
+        "provider",
+        "model",
+        "created_at",
+    }
+
+    glossary_term_foreign_keys = sorted(
+        inspector.get_foreign_keys("glossary_terms"),
+        key=lambda foreign_key: foreign_key["constrained_columns"],
+    )
+    assert glossary_term_foreign_keys == [
         {
             "name": None,
             "constrained_columns": ["document_id"],
@@ -286,6 +325,57 @@ def test_llm_explanation_relationship_persists_structured_result() -> None:
         assert explanation.highlight is highlight
         assert document.llm_explanations == [explanation]
         assert highlight.llm_explanations == [explanation]
+
+
+def test_glossary_term_relationship_persists_structured_result() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    database.Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        document = database.Document(
+            title="Sample",
+            original_filename="sample.pdf",
+            storage_path="documents/sample.pdf",
+            page_count=1,
+            pages=[
+                database.DocumentPage(
+                    page_number=1,
+                    text="Sanitized sample page text.",
+                )
+            ],
+            highlights=[
+                database.Highlight(
+                    page_number=1,
+                    selected_text="Sanitized selected text.",
+                )
+            ],
+        )
+        session.add(document)
+        session.flush()
+
+        highlight = document.highlights[0]
+        glossary_term = database.GlossaryTerm(
+            document=document,
+            highlight=highlight,
+            term="Sanitized term",
+            definition="Sanitized definition.",
+            source_text="selected text",
+            provider="fake-provider",
+            model="fake-model",
+        )
+
+        session.add(glossary_term)
+        session.commit()
+        session.refresh(document)
+        session.refresh(highlight)
+
+        assert glossary_term.id is not None
+        assert glossary_term.document_id == document.id
+        assert glossary_term.highlight_id == highlight.id
+        assert glossary_term.document is document
+        assert glossary_term.highlight is highlight
+        assert document.glossary_terms == [glossary_term]
+        assert highlight.glossary_terms == [glossary_term]
 
 
 def test_llm_request_log_relationships_persist_success_and_error_logs() -> None:

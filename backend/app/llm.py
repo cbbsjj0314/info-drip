@@ -10,6 +10,7 @@ OPENAI_BASE_URL_ENV_VAR = "INFODRIP_OPENAI_BASE_URL"
 OPENAI_MODEL_ENV_VAR = "INFODRIP_OPENAI_MODEL"
 FAKE_PROVIDER_NAME = "fake"
 OPENAI_COMPATIBLE_PROVIDER_NAME = "openai-compatible"
+MAX_GLOSSARY_TERMS_PER_REQUEST = 10
 
 EXPLANATION_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -22,6 +23,28 @@ EXPLANATION_RESPONSE_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["summary", "key_points"],
+}
+
+GLOSSARY_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "terms": {
+            "type": "array",
+            "maxItems": MAX_GLOSSARY_TERMS_PER_REQUEST,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "term": {"type": "string"},
+                    "definition": {"type": "string"},
+                    "source_text": {"type": ["string", "null"]},
+                },
+                "required": ["term", "definition", "source_text"],
+            },
+        },
+    },
+    "required": ["terms"],
 }
 
 
@@ -52,6 +75,56 @@ class ExplanationContent(BaseModel):
     key_points: list[str]
 
 
+class GlossaryExtractionRequest(BaseModel):
+    selected_text: str = Field(min_length=1)
+    surrounding_context: str | None = None
+    document_title: str | None = None
+
+    @field_validator("selected_text")
+    @classmethod
+    def selected_text_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("selected_text must not be blank")
+        return stripped
+
+    @field_validator("surrounding_context", "document_title")
+    @classmethod
+    def empty_optional_text_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class GlossaryTermContent(BaseModel):
+    term: str
+    definition: str
+    source_text: str | None = None
+
+    @field_validator("term", "definition")
+    @classmethod
+    def required_text_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("required text must not be blank")
+        return stripped
+
+    @field_validator("source_text")
+    @classmethod
+    def empty_source_text_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class GlossaryExtractionContent(BaseModel):
+    terms: list[GlossaryTermContent] = Field(
+        max_length=MAX_GLOSSARY_TERMS_PER_REQUEST
+    )
+
+
 class LLMUsageMetadata(BaseModel):
     provider: str
     model: str
@@ -66,8 +139,19 @@ class ExplanationResponse(BaseModel):
     usage: LLMUsageMetadata
 
 
+class GlossaryExtractionResponse(BaseModel):
+    content: GlossaryExtractionContent
+    usage: LLMUsageMetadata
+
+
 class LLMProvider(Protocol):
     def generate_explanation(self, request: ExplanationRequest) -> ExplanationResponse:
+        pass
+
+    def generate_glossary_terms(
+        self,
+        request: GlossaryExtractionRequest,
+    ) -> GlossaryExtractionResponse:
         pass
 
 
@@ -93,6 +177,39 @@ class FakeLLMProvider:
         )
 
         return ExplanationResponse(
+            content=content,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
+    def generate_glossary_terms(
+        self,
+        request: GlossaryExtractionRequest,
+    ) -> GlossaryExtractionResponse:
+        prompt_tokens = self._count_prompt_tokens(request)
+        content = GlossaryExtractionContent(
+            terms=[
+                GlossaryTermContent(
+                    term="Fake glossary term",
+                    definition=f"Fake definition for: {request.selected_text}",
+                    source_text=request.selected_text,
+                )
+            ]
+        )
+        completion_tokens = sum(
+            self._count_words(term.term)
+            + self._count_words(term.definition)
+            + self._count_words(term.source_text or "")
+            for term in content.terms
+        )
+
+        return GlossaryExtractionResponse(
             content=content,
             usage=LLMUsageMetadata(
                 provider=self.provider,
@@ -171,6 +288,39 @@ class OpenAICompatibleLLMProvider:
             ),
         )
 
+    def generate_glossary_terms(
+        self,
+        request: GlossaryExtractionRequest,
+    ) -> GlossaryExtractionResponse:
+        completion = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._build_glossary_messages(request),
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "infodrip_glossary_extraction",
+                    "strict": True,
+                    "schema": GLOSSARY_RESPONSE_SCHEMA,
+                },
+            },
+            temperature=0,
+        )
+        content = self._first_message_content(completion)
+        glossary = GlossaryExtractionContent.model_validate_json(content)
+        prompt_tokens, completion_tokens, total_tokens = self._usage_tokens(completion)
+
+        return GlossaryExtractionResponse(
+            content=glossary,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=getattr(completion, "model", self.model) or self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
     def _build_client(self, *, api_key: str, base_url: str | None) -> Any:
         from openai import OpenAI
 
@@ -195,6 +345,36 @@ class OpenAICompatibleLLMProvider:
                 "content": (
                     "You are InfoDrip's explanation task provider. Return only JSON "
                     "with summary and key_points. Do not include markdown."
+                ),
+            },
+            {"role": "user", "content": "\n\n".join(user_parts)},
+        ]
+
+    def _build_glossary_messages(
+        self,
+        request: GlossaryExtractionRequest,
+    ) -> list[dict[str, str]]:
+        user_parts = [
+            "Extract glossary terms from this selected PDF passage for study.",
+            f"Selected text:\n{request.selected_text}",
+            (
+                "For source_text, return only a short phrase from the selected text "
+                "that supports the term. Do not return full page context or long "
+                "surrounding passages."
+            ),
+            f"Return at most {MAX_GLOSSARY_TERMS_PER_REQUEST} terms.",
+        ]
+        if request.surrounding_context is not None:
+            user_parts.append(f"Surrounding context:\n{request.surrounding_context}")
+        if request.document_title is not None:
+            user_parts.append(f"Document title:\n{request.document_title}")
+
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are InfoDrip's glossary extraction task provider. Return "
+                    "only JSON with terms. Do not include markdown."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},

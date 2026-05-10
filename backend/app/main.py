@@ -19,13 +19,19 @@ from app.database import (
     Base,
     Document,
     DocumentPage,
+    GlossaryTerm,
     Highlight,
     LLMExplanation,
     LLMRequestLog,
     engine,
     get_db_session,
 )
-from app.llm import ExplanationRequest, LLMProvider, build_llm_provider_from_env
+from app.llm import (
+    ExplanationRequest,
+    GlossaryExtractionRequest,
+    LLMProvider,
+    build_llm_provider_from_env,
+)
 
 UPLOAD_DIR_ENV_VAR = "INFODRIP_UPLOAD_DIR"
 DEFAULT_UPLOAD_DIR = "uploads/documents"
@@ -79,6 +85,20 @@ class LLMExplanationResponse(BaseModel):
     highlight_id: int
     summary: str
     key_points: list[str]
+    provider: str
+    model: str
+    created_at: datetime
+
+
+class GlossaryTermResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    highlight_id: int
+    term: str
+    definition: str
+    source_text: str | None
     provider: str
     model: str
     created_at: datetime
@@ -143,6 +163,22 @@ def build_explanation_request(db: Session, highlight: Highlight) -> ExplanationR
     )
 
     return ExplanationRequest(
+        selected_text=highlight.selected_text,
+        surrounding_context=bounded_page_context(page_text),
+        document_title=document.title if document is not None else None,
+    )
+
+
+def build_glossary_request(db: Session, highlight: Highlight) -> GlossaryExtractionRequest:
+    document = db.get(Document, highlight.document_id)
+    page_text = db.scalar(
+        select(DocumentPage.text).where(
+            DocumentPage.document_id == highlight.document_id,
+            DocumentPage.page_number == highlight.page_number,
+        )
+    )
+
+    return GlossaryExtractionRequest(
         selected_text=highlight.selected_text,
         surrounding_context=bounded_page_context(page_text),
         document_title=document.title if document is not None else None,
@@ -355,3 +391,87 @@ def create_highlight_explanation(
     db.refresh(explanation)
 
     return explanation_to_response(explanation)
+
+
+@app.post(
+    "/api/v1/highlights/{highlight_id}/glossary-terms",
+    response_model=list[GlossaryTermResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+def create_highlight_glossary_terms(
+    highlight_id: int,
+    db: Session = Depends(get_db_session),
+    provider: LLMProvider = Depends(get_llm_provider),
+) -> list[GlossaryTerm]:
+    highlight = db.get(Highlight, highlight_id)
+    if highlight is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Highlight not found.",
+        )
+
+    provider_name = getattr(provider, "provider", "unknown")
+    model_name = getattr(provider, "model", "unknown")
+    start_time = perf_counter()
+
+    try:
+        llm_response = provider.generate_glossary_terms(
+            build_glossary_request(db, highlight)
+        )
+    except Exception as exc:
+        db.add(
+            LLMRequestLog(
+                provider=provider_name,
+                model=model_name,
+                task_type="glossary_extraction",
+                status="error",
+                latency_ms=now_latency_ms(start_time),
+                prompt_tokens=None,
+                completion_tokens=None,
+                total_tokens=None,
+                estimated_cost=None,
+                document_id=highlight.document_id,
+                highlight_id=highlight.id,
+                error_message=sanitize_provider_error_message(exc),
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Glossary extraction failed.",
+        ) from exc
+
+    glossary_terms = [
+        GlossaryTerm(
+            document_id=highlight.document_id,
+            highlight_id=highlight.id,
+            term=term.term,
+            definition=term.definition,
+            source_text=term.source_text,
+            provider=llm_response.usage.provider,
+            model=llm_response.usage.model,
+        )
+        for term in llm_response.content.terms
+    ]
+    db.add_all(glossary_terms)
+    db.add(
+        LLMRequestLog(
+            provider=llm_response.usage.provider,
+            model=llm_response.usage.model,
+            task_type="glossary_extraction",
+            status="success",
+            latency_ms=now_latency_ms(start_time),
+            prompt_tokens=llm_response.usage.prompt_tokens,
+            completion_tokens=llm_response.usage.completion_tokens,
+            total_tokens=llm_response.usage.total_tokens,
+            estimated_cost=llm_response.usage.estimated_cost,
+            document_id=highlight.document_id,
+            highlight_id=highlight.id,
+            error_message=None,
+        )
+    )
+    db.commit()
+    for glossary_term in glossary_terms:
+        db.refresh(glossary_term)
+
+    return glossary_terms
