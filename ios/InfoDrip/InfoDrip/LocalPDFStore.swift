@@ -51,6 +51,26 @@ struct BackendHighlight: Equatable, Decodable {
     }
 }
 
+struct BackendExplanation: Equatable, Decodable {
+    let id: Int
+    let highlightID: Int
+    let summary: String
+    let keyPoints: [String]
+    let provider: String
+    let model: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case highlightID = "highlight_id"
+        case summary
+        case keyPoints = "key_points"
+        case provider
+        case model
+        case createdAt = "created_at"
+    }
+}
+
 enum PDFUploadState: Equatable {
     case idle
     case uploading
@@ -62,6 +82,13 @@ enum HighlightSaveState: Equatable {
     case idle
     case saving
     case saved(BackendHighlight)
+    case failed(String)
+}
+
+enum ExplanationState: Equatable {
+    case idle
+    case loading
+    case loaded(BackendExplanation)
     case failed(String)
 }
 
@@ -130,6 +157,28 @@ struct BackendAPIClient {
         return try JSONDecoder().decode(BackendHighlight.self, from: data)
     }
 
+    func createExplanation(highlightID: Int) async throws -> BackendExplanation {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/highlights")
+            .appendingPathComponent(String(highlightID))
+            .appendingPathComponent("explanations")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 201 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode(BackendExplanation.self, from: data)
+    }
+
     private func multipartBody(fileURL: URL, fieldName: String, boundary: String) throws -> Data {
         var body = Data()
         let filename = fileURL.lastPathComponent
@@ -186,6 +235,7 @@ final class LocalPDFStore: ObservableObject {
     @Published private(set) var currentDocument: ImportedPDF?
     @Published private(set) var uploadState: PDFUploadState = .idle
     @Published private(set) var highlightSaveState: HighlightSaveState = .idle
+    @Published private(set) var explanationState: ExplanationState = .idle
     @Published private(set) var lastSavedHighlight: BackendHighlight?
 
     private let apiClient: BackendAPIClient
@@ -203,6 +253,7 @@ final class LocalPDFStore: ObservableObject {
         currentDocument = document
         uploadState = .uploading
         highlightSaveState = .idle
+        explanationState = .idle
         lastSavedHighlight = nil
 
         Task {
@@ -239,9 +290,41 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
+    func explainSelectedHighlight(text: String, pageNumber: Int?) {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            explanationState = .failed("Backend document is not ready.")
+            return
+        }
+
+        guard let pageNumber else {
+            explanationState = .failed("Could not find the selected page.")
+            return
+        }
+
+        let selectedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedText.isEmpty else {
+            explanationState = .failed("Select text before requesting an explanation.")
+            return
+        }
+
+        explanationState = .loading
+
+        Task {
+            await explainSelection(
+                documentID: backendDocument.id,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+        }
+    }
+
     func clearHighlightSaveState() {
         highlightSaveState = .idle
         lastSavedHighlight = nil
+    }
+
+    func clearExplanationState() {
+        explanationState = .idle
     }
 
     private func upload(documentID: UUID, fileURL: URL) async {
@@ -282,6 +365,56 @@ final class LocalPDFStore: ObservableObject {
 
             highlightSaveState = .failed(error.localizedDescription)
         }
+    }
+
+    private func explainSelection(documentID: Int, pageNumber: Int, selectedText: String) async {
+        do {
+            let highlight = try await highlightForExplanation(
+                documentID: documentID,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+            let explanation = try await apiClient.createExplanation(highlightID: highlight.id)
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            lastSavedHighlight = highlight
+            highlightSaveState = .saved(highlight)
+            explanationState = .loaded(explanation)
+        } catch {
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            if case .saving = highlightSaveState {
+                highlightSaveState = .failed(error.localizedDescription)
+            }
+            explanationState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func highlightForExplanation(
+        documentID: Int,
+        pageNumber: Int,
+        selectedText: String
+    ) async throws -> BackendHighlight {
+        if let lastSavedHighlight,
+           lastSavedHighlight.documentID == documentID,
+           lastSavedHighlight.pageNumber == pageNumber,
+           lastSavedHighlight.selectedText == selectedText {
+            return lastSavedHighlight
+        }
+
+        highlightSaveState = .saving
+        let highlight = try await apiClient.createHighlight(
+            documentID: documentID,
+            pageNumber: pageNumber,
+            selectedText: selectedText
+        )
+        lastSavedHighlight = highlight
+        highlightSaveState = .saved(highlight)
+        return highlight
     }
 
     private func copyIntoAppDocuments(_ sourceURL: URL) throws -> URL {
