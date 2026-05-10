@@ -7,10 +7,14 @@ from pydantic import ValidationError
 
 from app.llm import (
     EXPLANATION_RESPONSE_SCHEMA,
+    GLOSSARY_RESPONSE_SCHEMA,
     ExplanationRequest,
     FakeLLMProvider,
+    GlossaryExtractionContent,
+    GlossaryExtractionRequest,
     LLMProvider,
     LLMProviderConfigError,
+    MAX_GLOSSARY_TERMS_PER_REQUEST,
     OpenAICompatibleLLMProvider,
     build_llm_provider_from_env,
 )
@@ -36,6 +40,29 @@ def test_fake_provider_matches_llm_provider_interface() -> None:
     assert response.usage.prompt_tokens == 7
     assert response.usage.completion_tokens == 22
     assert response.usage.total_tokens == 29
+    assert response.usage.estimated_cost == Decimal("0.000000")
+
+
+def test_fake_provider_generates_glossary_terms() -> None:
+    provider: LLMProvider = FakeLLMProvider()
+    request = GlossaryExtractionRequest(
+        selected_text="selected concept",
+        surrounding_context="nearby page context",
+        document_title="Sample Document",
+    )
+
+    response = provider.generate_glossary_terms(request)
+
+    assert len(response.content.terms) == 1
+    term = response.content.terms[0]
+    assert term.term == "Fake glossary term"
+    assert term.definition == "Fake definition for: selected concept"
+    assert term.source_text == "selected concept"
+    assert response.usage.provider == "fake"
+    assert response.usage.model == "fake-explanation-v1"
+    assert response.usage.prompt_tokens == 7
+    assert response.usage.completion_tokens == 10
+    assert response.usage.total_tokens == 17
     assert response.usage.estimated_cost == Decimal("0.000000")
 
 
@@ -68,6 +95,80 @@ def test_explanation_request_trims_text_and_normalizes_empty_optional_fields() -
 def test_explanation_request_rejects_blank_selected_text() -> None:
     with pytest.raises(ValidationError):
         ExplanationRequest(selected_text="   ")
+
+
+def test_glossary_request_trims_text_and_normalizes_empty_optional_fields() -> None:
+    request = GlossaryExtractionRequest(
+        selected_text="  selected concept  ",
+        surrounding_context="  ",
+        document_title="  Document  ",
+    )
+
+    assert request.selected_text == "selected concept"
+    assert request.surrounding_context is None
+    assert request.document_title == "Document"
+
+
+def test_glossary_terms_require_non_blank_term_and_definition() -> None:
+    with pytest.raises(ValidationError):
+        GlossaryExtractionContent.model_validate(
+            {
+                "terms": [
+                    {
+                        "term": "   ",
+                        "definition": "Definition.",
+                        "source_text": "phrase",
+                    }
+                ]
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        GlossaryExtractionContent.model_validate(
+            {
+                "terms": [
+                    {
+                        "term": "Term",
+                        "definition": "   ",
+                        "source_text": "phrase",
+                    }
+                ]
+            }
+        )
+
+
+def test_glossary_term_source_text_normalizes_blank_to_none() -> None:
+    content = GlossaryExtractionContent.model_validate(
+        {
+            "terms": [
+                {
+                    "term": " Term ",
+                    "definition": " Definition. ",
+                    "source_text": "   ",
+                }
+            ]
+        }
+    )
+
+    assert content.terms[0].term == "Term"
+    assert content.terms[0].definition == "Definition."
+    assert content.terms[0].source_text is None
+
+
+def test_glossary_content_rejects_too_many_terms() -> None:
+    with pytest.raises(ValidationError):
+        GlossaryExtractionContent.model_validate(
+            {
+                "terms": [
+                    {
+                        "term": f"Term {index}",
+                        "definition": "Definition.",
+                        "source_text": None,
+                    }
+                    for index in range(MAX_GLOSSARY_TERMS_PER_REQUEST + 1)
+                ]
+            }
+        )
 
 
 def test_openai_compatible_provider_generates_normalized_explanation() -> None:
@@ -148,6 +249,132 @@ def test_openai_compatible_provider_validates_response_shape() -> None:
 
     with pytest.raises(ValidationError):
         provider.generate_explanation(ExplanationRequest(selected_text="concept"))
+
+
+def test_openai_compatible_provider_generates_normalized_glossary_terms() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "terms": [
+                {
+                    "term": " Concept ",
+                    "definition": " Definition. ",
+                    "source_text": " selected concept ",
+                }
+            ],
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=11,
+            completion_tokens=7,
+            total_tokens=18,
+        ),
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=chat_completions),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        base_url="https://llm.example.test/v1",
+        client=client,
+    )
+
+    response = provider.generate_glossary_terms(
+        GlossaryExtractionRequest(
+            selected_text="selected concept",
+            surrounding_context="nearby context",
+            document_title="Sample Document",
+        )
+    )
+
+    assert len(response.content.terms) == 1
+    assert response.content.terms[0].term == "Concept"
+    assert response.content.terms[0].definition == "Definition."
+    assert response.content.terms[0].source_text == "selected concept"
+    assert response.usage.provider == "openai-compatible"
+    assert response.usage.model == "provider-model"
+    assert response.usage.prompt_tokens == 11
+    assert response.usage.completion_tokens == 7
+    assert response.usage.total_tokens == 18
+    assert response.usage.estimated_cost == Decimal("0.000000")
+
+    assert len(chat_completions.calls) == 1
+    call = chat_completions.calls[0]
+    assert call["model"] == "test-model"
+    assert call["temperature"] == 0
+    assert call["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "infodrip_glossary_extraction",
+            "strict": True,
+            "schema": GLOSSARY_RESPONSE_SCHEMA,
+        },
+    }
+    schema_terms = GLOSSARY_RESPONSE_SCHEMA["properties"]["terms"]
+    assert schema_terms["maxItems"] == 10
+    schema_source_text = schema_terms["items"]["properties"]["source_text"]
+    assert schema_source_text == {"type": ["string", "null"]}
+    assert call["messages"][0]["role"] == "system"
+    assert call["messages"][1]["role"] == "user"
+    assert "Selected text:\nselected concept" in call["messages"][1]["content"]
+    assert "Surrounding context:\nnearby context" in call["messages"][1]["content"]
+    assert "Document title:\nSample Document" in call["messages"][1]["content"]
+    assert "short phrase from the selected text" in call["messages"][1]["content"]
+    assert "test-api-key" not in json.dumps(call)
+
+
+def test_openai_compatible_provider_validates_glossary_response_shape() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={"terms": [{"term": "Missing definition."}]},
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        ),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=chat_completions),
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        provider.generate_glossary_terms(
+            GlossaryExtractionRequest(selected_text="concept")
+        )
+
+
+def test_openai_compatible_provider_rejects_too_many_glossary_terms() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "terms": [
+                {
+                    "term": f"Term {index}",
+                    "definition": "Definition.",
+                    "source_text": None,
+                }
+                for index in range(MAX_GLOSSARY_TERMS_PER_REQUEST + 1)
+            ]
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        ),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=chat_completions),
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        provider.generate_glossary_terms(
+            GlossaryExtractionRequest(selected_text="concept")
+        )
 
 
 def test_openai_compatible_provider_falls_back_to_summed_total_tokens() -> None:

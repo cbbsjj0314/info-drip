@@ -11,6 +11,9 @@ from app.llm import (
     ExplanationContent,
     ExplanationRequest,
     ExplanationResponse,
+    GlossaryExtractionContent,
+    GlossaryExtractionRequest,
+    GlossaryExtractionResponse,
     LLMUsageMetadata,
 )
 from app.main import PAGE_CONTEXT_MAX_CHARS, app, get_llm_provider
@@ -529,6 +532,311 @@ def test_create_highlight_explanation_logs_provider_failure() -> None:
             assert log.completion_tokens is None
             assert log.total_tokens is None
             assert log.estimated_cost is None
+            assert log.error_message == "Provider request failed."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_glossary_terms_stores_result_and_success_log() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(
+        test_session,
+        ["First page text.", "Same page context for selected text."],
+        title="Learning Sample",
+    )
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=2,
+            selected_text="Sanitized selected text.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    captured_requests: list[GlossaryExtractionRequest] = []
+
+    class CapturingProvider:
+        provider = "fake"
+        model = "fake-explanation-v1"
+
+        def generate_glossary_terms(
+            self,
+            request: GlossaryExtractionRequest,
+        ) -> GlossaryExtractionResponse:
+            captured_requests.append(request)
+            return GlossaryExtractionResponse(
+                content=GlossaryExtractionContent(
+                    terms=[
+                        {
+                            "term": "Selected term",
+                            "definition": "A stored fake definition.",
+                            "source_text": "selected text",
+                        },
+                        {
+                            "term": "Context term",
+                            "definition": "Another fake definition.",
+                            "source_text": None,
+                        },
+                    ]
+                ),
+                usage=LLMUsageMetadata(
+                    provider=self.provider,
+                    model=self.model,
+                    prompt_tokens=4,
+                    completion_tokens=6,
+                    total_tokens=10,
+                    estimated_cost=Decimal("0.000000"),
+                ),
+            )
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = CapturingProvider
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(f"/api/v1/highlights/{highlight_id}/glossary-terms")
+
+        assert response.status_code == 201
+        payload = response.json()
+        assert [
+            (item["term"], item["definition"], item["source_text"]) for item in payload
+        ] == [
+            ("Selected term", "A stored fake definition.", "selected text"),
+            ("Context term", "Another fake definition.", None),
+        ]
+        assert {item["document_id"] for item in payload} == {document_id}
+        assert {item["highlight_id"] for item in payload} == {highlight_id}
+        assert {item["provider"] for item in payload} == {"fake"}
+        assert {item["model"] for item in payload} == {"fake-explanation-v1"}
+        assert all("created_at" in item for item in payload)
+        assert captured_requests == [
+            GlossaryExtractionRequest(
+                selected_text="Sanitized selected text.",
+                surrounding_context="Same page context for selected text.",
+                document_title="Learning Sample",
+            )
+        ]
+
+        with test_session() as session:
+            glossary_terms = session.scalars(
+                select(database.GlossaryTerm).order_by(database.GlossaryTerm.id)
+            ).all()
+            assert len(glossary_terms) == 2
+            assert glossary_terms[0].document_id == document_id
+            assert glossary_terms[0].highlight_id == highlight_id
+            assert glossary_terms[0].term == "Selected term"
+            assert glossary_terms[0].definition == "A stored fake definition."
+            assert glossary_terms[0].source_text == "selected text"
+            assert glossary_terms[0].provider == "fake"
+            assert glossary_terms[0].model == "fake-explanation-v1"
+
+            log = session.scalars(select(database.LLMRequestLog)).one()
+            assert log.document_id == document_id
+            assert log.highlight_id == highlight_id
+            assert log.provider == "fake"
+            assert log.model == "fake-explanation-v1"
+            assert log.task_type == "glossary_extraction"
+            assert log.status == "success"
+            assert log.latency_ms is not None
+            assert log.prompt_tokens == 4
+            assert log.completion_tokens == 6
+            assert log.total_tokens == 10
+            assert log.estimated_cost == Decimal("0.000000")
+            assert log.error_message is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_glossary_terms_caps_page_context_before_provider_call() -> None:
+    test_session = build_test_session()
+    long_context = "A" * (PAGE_CONTEXT_MAX_CHARS + 200)
+    document_id = create_document_with_pages(
+        test_session,
+        ["Other page context.", long_context],
+        title="Long Context Sample",
+    )
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=2,
+            selected_text="Selected text.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    captured_requests: list[GlossaryExtractionRequest] = []
+
+    class CapturingProvider:
+        provider = "fake"
+        model = "fake-explanation-v1"
+
+        def generate_glossary_terms(
+            self,
+            request: GlossaryExtractionRequest,
+        ) -> GlossaryExtractionResponse:
+            captured_requests.append(request)
+            return GlossaryExtractionResponse(
+                content=GlossaryExtractionContent(terms=[]),
+                usage=LLMUsageMetadata(
+                    provider=self.provider,
+                    model=self.model,
+                    prompt_tokens=3,
+                    completion_tokens=0,
+                    total_tokens=3,
+                    estimated_cost=Decimal("0.000000"),
+                ),
+            )
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = CapturingProvider
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(f"/api/v1/highlights/{highlight_id}/glossary-terms")
+
+        assert response.status_code == 201
+        assert captured_requests == [
+            GlossaryExtractionRequest(
+                selected_text="Selected text.",
+                surrounding_context="A" * PAGE_CONTEXT_MAX_CHARS,
+                document_title="Long Context Sample",
+            )
+        ]
+        assert "Other page context." not in captured_requests[0].surrounding_context
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_glossary_terms_rejects_missing_highlight() -> None:
+    test_session = build_test_session()
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.post("/api/v1/highlights/404/glossary-terms")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Highlight not found."}
+
+        with test_session() as session:
+            assert session.scalars(select(database.LLMRequestLog)).all() == []
+            assert session.scalars(select(database.GlossaryTerm)).all() == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_glossary_terms_logs_provider_failure() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(test_session, ["Page text."])
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=1,
+            selected_text="Sanitized selected text.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    class FailingProvider:
+        provider = "fake"
+        model = "fake-explanation-v1"
+
+        def generate_glossary_terms(
+            self,
+            request: GlossaryExtractionRequest,
+        ) -> GlossaryExtractionResponse:
+            raise RuntimeError("private provider failure")
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = FailingProvider
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(f"/api/v1/highlights/{highlight_id}/glossary-terms")
+
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Glossary extraction failed."}
+
+        with test_session() as session:
+            assert session.scalars(select(database.GlossaryTerm)).all() == []
+            log = session.scalars(select(database.LLMRequestLog)).one()
+            assert log.document_id == document_id
+            assert log.highlight_id == highlight_id
+            assert log.provider == "fake"
+            assert log.model == "fake-explanation-v1"
+            assert log.task_type == "glossary_extraction"
+            assert log.status == "error"
+            assert log.latency_ms is not None
+            assert log.prompt_tokens is None
+            assert log.completion_tokens is None
+            assert log.total_tokens is None
+            assert log.estimated_cost is None
+            assert log.error_message == "Provider request failed."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_glossary_terms_does_not_store_invalid_provider_output() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(test_session, ["Page text."])
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=1,
+            selected_text="Sanitized selected text.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    class InvalidProvider:
+        provider = "fake"
+        model = "fake-explanation-v1"
+
+        def generate_glossary_terms(
+            self,
+            request: GlossaryExtractionRequest,
+        ) -> GlossaryExtractionResponse:
+            GlossaryExtractionContent.model_validate(
+                {
+                    "terms": [
+                        {
+                            "term": "   ",
+                            "definition": "Definition.",
+                            "source_text": "phrase",
+                        }
+                    ]
+                }
+            )
+            raise AssertionError("validation should have failed")
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = InvalidProvider
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(f"/api/v1/highlights/{highlight_id}/glossary-terms")
+
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Glossary extraction failed."}
+
+        with test_session() as session:
+            assert session.scalars(select(database.GlossaryTerm)).all() == []
+            log = session.scalars(select(database.LLMRequestLog)).one()
+            assert log.task_type == "glossary_extraction"
+            assert log.status == "error"
             assert log.error_message == "Provider request failed."
     finally:
         app.dependency_overrides.clear()
