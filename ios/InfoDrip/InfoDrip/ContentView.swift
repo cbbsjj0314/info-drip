@@ -17,6 +17,7 @@ struct ContentView: View {
                 uploadState: pdfStore.uploadState,
                 highlightSaveState: pdfStore.highlightSaveState,
                 explanationState: pdfStore.explanationState,
+                glossaryState: pdfStore.glossaryState,
                 pageCount: $pageCount,
                 onImport: { isImporterPresented = true },
                 onSaveHighlight: { selection in
@@ -31,9 +32,16 @@ struct ContentView: View {
                         pageNumber: selection.pageNumber
                     )
                 },
+                onGlossary: { selection in
+                    pdfStore.createGlossaryTermsForSelection(
+                        text: selection.text,
+                        pageNumber: selection.pageNumber
+                    )
+                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
                     pdfStore.clearExplanationState()
+                    pdfStore.clearGlossaryState()
                 }
             )
         }
@@ -121,10 +129,12 @@ private struct ReaderWorkspace: View {
     let uploadState: PDFUploadState
     let highlightSaveState: HighlightSaveState
     let explanationState: ExplanationState
+    let glossaryState: GlossaryState
     @Binding var pageCount: Int
     let onImport: () -> Void
     let onSaveHighlight: (PDFTextSelection) -> Void
     let onExplain: (PDFTextSelection) -> Void
+    let onGlossary: (PDFTextSelection) -> Void
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
     @State private var selection = PDFTextSelection.empty
@@ -146,6 +156,7 @@ private struct ReaderWorkspace: View {
                                 selectedAction: selectedQuickAction,
                                 highlightSaveState: highlightSaveState,
                                 explanationState: explanationState,
+                                glossaryState: glossaryState,
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canSaveHighlight: canSaveHighlight,
                                 onSelect: handleQuickAction
@@ -201,6 +212,10 @@ private struct ReaderWorkspace: View {
             return false
         }
 
+        if case .loading = glossaryState {
+            return false
+        }
+
         guard case .uploaded = uploadState else {
             return false
         }
@@ -233,7 +248,9 @@ private struct ReaderWorkspace: View {
             onSaveHighlight(selection)
         case .explain:
             onExplain(selection)
-        case .glossary, .quiz:
+        case .glossary:
+            onGlossary(selection)
+        case .quiz:
             return
         }
     }
@@ -392,6 +409,7 @@ private struct QuickActionPanel: View {
     let selectedAction: QuickAction?
     let highlightSaveState: HighlightSaveState
     let explanationState: ExplanationState
+    let glossaryState: GlossaryState
     let highlightAvailabilityMessage: String?
     let canSaveHighlight: Bool
     let onSelect: (QuickAction) -> Void
@@ -432,6 +450,7 @@ private struct QuickActionPanel: View {
             }
 
             explanationContent
+            glossaryContent
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -454,6 +473,17 @@ private struct QuickActionPanel: View {
             case .failed(let message):
                 return message
             }
+        } else if selectedAction == .glossary {
+            switch glossaryState {
+            case .idle:
+                return highlightAvailabilityMessage
+            case .loading:
+                return "용어를 추출하는 중..."
+            case .loaded(let glossaryTerms):
+                return "용어 추출됨 · \(glossaryTerms.count)개"
+            case .failed(let message):
+                return message
+            }
         } else {
             switch highlightSaveState {
             case .idle:
@@ -471,6 +501,17 @@ private struct QuickActionPanel: View {
     private var statusColor: Color {
         if selectedAction == .explain {
             switch explanationState {
+            case .loaded:
+                return .green
+            case .failed:
+                return .red
+            case .idle, .loading:
+                return .secondary
+            }
+        }
+
+        if selectedAction == .glossary {
+            switch glossaryState {
             case .loaded:
                 return .green
             case .failed:
@@ -536,11 +577,62 @@ private struct QuickActionPanel: View {
         }
     }
 
+    @ViewBuilder
+    private var glossaryContent: some View {
+        if selectedAction == .glossary {
+            switch glossaryState {
+            case .loading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("선택한 문장에서 학습 용어를 추출하고 있습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .loaded(let glossaryTerms):
+                VStack(alignment: .leading, spacing: 10) {
+                    if glossaryTerms.isEmpty {
+                        Text("추출된 용어가 없습니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(glossaryTerms, id: \.id) { glossaryTerm in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(glossaryTerm.term)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(glossaryTerm.definition)
+                                    .font(.caption)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                if let sourceText = glossaryTerm.sourceText,
+                                   !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                    Text(sourceText)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+
+                            if glossaryTerm.id != glossaryTerms.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            case .failed, .idle:
+                EmptyView()
+            }
+        }
+    }
+
     private func isDisabled(_ action: QuickAction) -> Bool {
         switch action {
-        case .highlight, .explain:
+        case .highlight, .explain, .glossary:
             return !canSaveHighlight
-        case .glossary, .quiz:
+        case .quiz:
             return false
         }
     }
