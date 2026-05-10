@@ -35,10 +35,33 @@ struct BackendDocument: Equatable, Decodable {
     }
 }
 
+struct BackendHighlight: Equatable, Decodable {
+    let id: Int
+    let documentID: Int
+    let pageNumber: Int
+    let selectedText: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case documentID = "document_id"
+        case pageNumber = "page_number"
+        case selectedText = "selected_text"
+        case createdAt = "created_at"
+    }
+}
+
 enum PDFUploadState: Equatable {
     case idle
     case uploading
     case uploaded(BackendDocument)
+    case failed(String)
+}
+
+enum HighlightSaveState: Equatable {
+    case idle
+    case saving
+    case saved(BackendHighlight)
     case failed(String)
 }
 
@@ -80,6 +103,33 @@ struct BackendAPIClient {
         return try JSONDecoder().decode(BackendDocument.self, from: data)
     }
 
+    func createHighlight(documentID: Int, pageNumber: Int, selectedText: String) async throws -> BackendHighlight {
+        let endpoint = baseURL.appendingPathComponent("api/v1/highlights")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            HighlightCreatePayload(
+                documentID: documentID,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+        )
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 201 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode(BackendHighlight.self, from: data)
+    }
+
     private func multipartBody(fileURL: URL, fieldName: String, boundary: String) throws -> Data {
         var body = Data()
         let filename = fileURL.lastPathComponent
@@ -94,6 +144,18 @@ struct BackendAPIClient {
 
         return body
     }
+
+    private struct HighlightCreatePayload: Encodable {
+        let documentID: Int
+        let pageNumber: Int
+        let selectedText: String
+
+        enum CodingKeys: String, CodingKey {
+            case documentID = "document_id"
+            case pageNumber = "page_number"
+            case selectedText = "selected_text"
+        }
+    }
 }
 
 enum BackendAPIError: LocalizedError {
@@ -106,9 +168,9 @@ enum BackendAPIError: LocalizedError {
             return "Backend returned an invalid response."
         case .requestFailed(let statusCode, let message):
             if let message, !message.isEmpty {
-                return "Backend upload failed (\(statusCode)): \(message)"
+                return "Backend request failed (\(statusCode)): \(message)"
             }
-            return "Backend upload failed (\(statusCode))."
+            return "Backend request failed (\(statusCode))."
         }
     }
 }
@@ -123,6 +185,8 @@ private extension Data {
 final class LocalPDFStore: ObservableObject {
     @Published private(set) var currentDocument: ImportedPDF?
     @Published private(set) var uploadState: PDFUploadState = .idle
+    @Published private(set) var highlightSaveState: HighlightSaveState = .idle
+    @Published private(set) var lastSavedHighlight: BackendHighlight?
 
     private let apiClient: BackendAPIClient
 
@@ -138,10 +202,46 @@ final class LocalPDFStore: ObservableObject {
         )
         currentDocument = document
         uploadState = .uploading
+        highlightSaveState = .idle
+        lastSavedHighlight = nil
 
         Task {
             await upload(documentID: document.id, fileURL: destinationURL)
         }
+    }
+
+    func saveSelectedHighlight(text: String, pageNumber: Int?) {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            highlightSaveState = .failed("Backend document is not ready.")
+            return
+        }
+
+        guard let pageNumber else {
+            highlightSaveState = .failed("Could not find the selected page.")
+            return
+        }
+
+        let selectedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedText.isEmpty else {
+            highlightSaveState = .failed("Select text before saving a highlight.")
+            return
+        }
+
+        highlightSaveState = .saving
+        lastSavedHighlight = nil
+
+        Task {
+            await createHighlight(
+                documentID: backendDocument.id,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+        }
+    }
+
+    func clearHighlightSaveState() {
+        highlightSaveState = .idle
+        lastSavedHighlight = nil
     }
 
     private func upload(documentID: UUID, fileURL: URL) async {
@@ -159,6 +259,28 @@ final class LocalPDFStore: ObservableObject {
             }
 
             uploadState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func createHighlight(documentID: Int, pageNumber: Int, selectedText: String) async {
+        do {
+            let highlight = try await apiClient.createHighlight(
+                documentID: documentID,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            lastSavedHighlight = highlight
+            highlightSaveState = .saved(highlight)
+        } catch {
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            highlightSaveState = .failed(error.localizedDescription)
         }
     }
 

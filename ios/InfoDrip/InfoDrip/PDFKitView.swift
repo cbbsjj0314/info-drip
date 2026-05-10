@@ -1,13 +1,24 @@
 import PDFKit
 import SwiftUI
 
+struct PDFTextSelection: Equatable {
+    let text: String
+    let pageNumber: Int?
+
+    static let empty = PDFTextSelection(text: "", pageNumber: nil)
+
+    var isEmpty: Bool {
+        text.isEmpty
+    }
+}
+
 struct PDFKitView: UIViewRepresentable {
     let documentURL: URL
     @Binding var pageCount: Int
-    @Binding var selectedText: String
+    @Binding var selection: PDFTextSelection
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selectedText: $selectedText)
+        Coordinator(selection: $selection)
     }
 
     func makeUIView(context: Context) -> PDFView {
@@ -22,7 +33,7 @@ struct PDFKitView: UIViewRepresentable {
     }
 
     func updateUIView(_ pdfView: PDFView, context: Context) {
-        context.coordinator.selectedText = $selectedText
+        context.coordinator.selection = $selection
 
         guard context.coordinator.currentURL != documentURL else {
             return
@@ -44,11 +55,11 @@ struct PDFKitView: UIViewRepresentable {
 
     final class Coordinator: NSObject {
         var currentURL: URL?
-        var selectedText: Binding<String>
+        var selection: Binding<PDFTextSelection>
         private weak var observedPDFView: PDFView?
 
-        init(selectedText: Binding<String>) {
-            self.selectedText = selectedText
+        init(selection: Binding<PDFTextSelection>) {
+            self.selection = selection
         }
 
         func attach(to pdfView: PDFView) {
@@ -75,23 +86,54 @@ struct PDFKitView: UIViewRepresentable {
 
         func clearSelection() {
             observedPDFView?.clearSelection()
-            updateSelectedText("")
+            updateSelection(.empty)
         }
 
         @objc private func selectionChanged(_ notification: Notification) {
             guard let pdfView = notification.object as? PDFView else {
-                updateSelectedText("")
+                updateSelection(.empty)
                 return
             }
 
-            let text = pdfView.currentSelection?.string?
+            guard let currentSelection = pdfView.currentSelection else {
+                updateSelection(.empty)
+                return
+            }
+
+            let text = currentSelection.string?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            updateSelectedText(text)
+            guard !text.isEmpty else {
+                updateSelection(.empty)
+                return
+            }
+
+            updateSelection(
+                PDFTextSelection(
+                    text: text,
+                    pageNumber: pageNumber(for: currentSelection, in: pdfView.document)
+                )
+            )
         }
 
-        private func updateSelectedText(_ text: String) {
+        private func pageNumber(for selection: PDFSelection, in document: PDFDocument?) -> Int? {
+            guard
+                let document,
+                let page = selection.pages.first
+            else {
+                return nil
+            }
+
+            let pageIndex = document.index(for: page)
+            guard pageIndex != NSNotFound else {
+                return nil
+            }
+
+            return pageIndex + 1
+        }
+
+        private func updateSelection(_ nextSelection: PDFTextSelection) {
             DispatchQueue.main.async {
-                self.selectedText.wrappedValue = text
+                self.selection.wrappedValue = nextSelection
             }
         }
 
