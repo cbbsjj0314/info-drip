@@ -437,6 +437,9 @@ private struct UploadStatusView: View {
 }
 
 private struct QuickActionPanel: View {
+    private let loadedResultPreviewMaxHeight: CGFloat = 220
+    private let maxPreviewKeyPoints = 3
+
     let selectedAction: QuickAction?
     let highlightSaveState: HighlightSaveState
     let explanationState: ExplanationState
@@ -600,50 +603,35 @@ private struct QuickActionPanel: View {
                         .foregroundStyle(.secondary)
                 }
             case .loaded(let quizzes):
-                VStack(alignment: .leading, spacing: 10) {
-                    if quizzes.isEmpty {
-                        Text("생성된 퀴즈가 없습니다.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Button {
-                            onOpenQuizStudy(quizzes)
-                        } label: {
-                            Label("공부 모드 열기", systemImage: "rectangle.stack.badge.play")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.regular)
-
-                        ForEach(quizzes, id: \.id) { quiz in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(displayTitle(for: quiz.quizType))
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-
-                                Text(quiz.question)
-                                    .font(.subheadline.weight(.semibold))
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                LabeledContent("정답") {
-                                    Text(quiz.answer)
-                                        .font(.caption)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-
-                                LabeledContent("설명") {
-                                    Text(quiz.explanation)
-                                        .font(.caption)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-
-                                Text(quiz.sourceText)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(3)
+                if quizzes.isEmpty {
+                    Text("생성된 퀴즈가 없습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    loadedResultPreview {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button {
+                                onOpenQuizStudy(quizzes)
+                            } label: {
+                                Label("공부 모드 열기", systemImage: "rectangle.stack.badge.play")
                             }
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+
+                            ForEach(quizzes, id: \.id) { quiz in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(displayTitle(for: quiz.quizType))
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+
+                                    Text(quiz.question)
+                                        .font(.subheadline.weight(.semibold))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+                            }
                         }
                     }
                 }
@@ -669,7 +657,7 @@ private struct QuickActionPanel: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(explanation.summary)
                         .font(.subheadline)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(4)
 
                     if !explanation.keyPoints.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
@@ -677,22 +665,20 @@ private struct QuickActionPanel: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
 
-                            ForEach(explanation.keyPoints, id: \.self) { point in
+                            ForEach(Array(explanation.keyPoints.prefix(maxPreviewKeyPoints)), id: \.self) { point in
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                                     Image(systemName: "checkmark.circle.fill")
                                         .font(.caption)
                                         .foregroundStyle(.green)
                                     Text(point)
                                         .font(.caption)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                        .lineLimit(2)
                                 }
                             }
                         }
                     }
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .modifier(LoadedResultPreviewModifier(maxHeight: loadedResultPreviewMaxHeight))
             case .failed, .idle:
                 EmptyView()
             }
@@ -712,38 +698,37 @@ private struct QuickActionPanel: View {
                         .foregroundStyle(.secondary)
                 }
             case .loaded(let glossaryTerms):
-                VStack(alignment: .leading, spacing: 10) {
-                    if glossaryTerms.isEmpty {
-                        Text("추출된 용어가 없습니다.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(glossaryTerms, id: \.id) { glossaryTerm in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(glossaryTerm.term)
-                                    .font(.subheadline.weight(.semibold))
-                                Text(glossaryTerm.definition)
-                                    .font(.caption)
-                                    .fixedSize(horizontal: false, vertical: true)
+                if glossaryTerms.isEmpty {
+                    Text("추출된 용어가 없습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    loadedResultPreview {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(glossaryTerms, id: \.id) { glossaryTerm in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(glossaryTerm.term)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(glossaryTerm.definition)
+                                        .font(.caption)
+                                        .lineLimit(3)
 
-                                if let sourceText = glossaryTerm.sourceText,
-                                   !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    Text(sourceText)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                                    if let sourceText = glossaryTerm.sourceText,
+                                       !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Text(sourceText)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
                                 }
-                            }
 
-                            if glossaryTerm.id != glossaryTerms.last?.id {
-                                Divider()
+                                if glossaryTerm.id != glossaryTerms.last?.id {
+                                    Divider()
+                                }
                             }
                         }
                     }
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
             case .failed, .idle:
                 EmptyView()
             }
@@ -766,6 +751,27 @@ private struct QuickActionPanel: View {
         default:
             return quizType
         }
+    }
+
+    private func loadedResultPreview<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .modifier(LoadedResultPreviewModifier(maxHeight: loadedResultPreviewMaxHeight))
+    }
+}
+
+private struct LoadedResultPreviewModifier: ViewModifier {
+    let maxHeight: CGFloat
+
+    func body(content: Content) -> some View {
+        ScrollView {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: maxHeight, alignment: .top)
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
