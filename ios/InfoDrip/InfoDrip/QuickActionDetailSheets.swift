@@ -159,7 +159,7 @@ struct GlossaryDetailSheet: View {
 
 struct QuizStudySheet: View {
     let quizzes: [BackendQuiz]
-    let onSaveAttempt: (Int, String) async throws -> BackendQuizAttempt
+    let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
     @State private var answersByQuizID: [Int: String] = [:]
     @State private var revealedQuizIDs: Set<Int> = []
@@ -200,7 +200,10 @@ struct QuizStudySheet: View {
                                 ),
                                 saveState: saveStatesByQuizID[quiz.id, default: .idle],
                                 onSave: {
-                                    saveAttempt(for: quiz)
+                                    saveAttempt(for: quiz, isCorrect: nil, kind: .answerOnly)
+                                },
+                                onSaveSelfCheck: { isCorrect, kind in
+                                    saveAttempt(for: quiz, isCorrect: isCorrect, kind: kind)
                                 }
                             )
                         }
@@ -237,7 +240,7 @@ struct QuizStudySheet: View {
         )
     }
 
-    private func saveAttempt(for quiz: BackendQuiz) {
+    private func saveAttempt(for quiz: BackendQuiz, isCorrect: Bool?, kind: QuizAttemptSaveKind) {
         let normalizedAnswer = answersByQuizID[quiz.id, default: ""]
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedAnswer.isEmpty else {
@@ -249,8 +252,8 @@ struct QuizStudySheet: View {
 
         Task { @MainActor in
             do {
-                let attempt = try await onSaveAttempt(quiz.id, normalizedAnswer)
-                saveStatesByQuizID[quiz.id] = .saved(attempt)
+                let attempt = try await onSaveAttempt(quiz.id, normalizedAnswer, isCorrect)
+                saveStatesByQuizID[quiz.id] = .saved(attempt, kind)
             } catch {
                 saveStatesByQuizID[quiz.id] = .failed(error.localizedDescription)
             }
@@ -258,10 +261,16 @@ struct QuizStudySheet: View {
     }
 }
 
+private enum QuizAttemptSaveKind: Equatable {
+    case answerOnly
+    case correct
+    case reviewAgain
+}
+
 private enum QuizAttemptSaveState: Equatable {
     case idle
     case saving
-    case saved(BackendQuizAttempt)
+    case saved(BackendQuizAttempt, QuizAttemptSaveKind)
     case failed(String)
 }
 
@@ -271,6 +280,7 @@ private struct QuizStudyCard: View {
     @Binding var isRevealed: Bool
     let saveState: QuizAttemptSaveState
     let onSave: () -> Void
+    let onSaveSelfCheck: (Bool, QuizAttemptSaveKind) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -303,7 +313,7 @@ private struct QuizStudyCard: View {
                     Label("답안 저장", systemImage: "tray.and.arrow.down")
                 }
                 .buttonStyle(.bordered)
-                .disabled(isSaveButtonDisabled)
+                .disabled(areSaveControlsDisabled)
 
                 Button {
                     isRevealed.toggle()
@@ -325,6 +335,24 @@ private struct QuizStudyCard: View {
                     answerBlock(title: "정답", text: quiz.answer)
                     answerBlock(title: "해설", text: quiz.explanation)
                     answerBlock(title: "근거", text: quiz.sourceText)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            onSaveSelfCheck(true, .correct)
+                        } label: {
+                            Label("맞음", systemImage: "checkmark.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(areSaveControlsDisabled)
+
+                        Button {
+                            onSaveSelfCheck(false, .reviewAgain)
+                        } label: {
+                            Label("다시 보기", systemImage: "arrow.counterclockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(areSaveControlsDisabled)
+                    }
                 }
                 .transition(.opacity)
             }
@@ -354,8 +382,8 @@ private struct QuizStudyCard: View {
         switch saveState {
         case .idle, .saving:
             EmptyView()
-        case .saved(let attempt):
-            Label("저장됨 · #\(attempt.id)", systemImage: "checkmark.circle.fill")
+        case .saved(let attempt, let kind):
+            Label(savedMessage(for: attempt, kind: kind), systemImage: "checkmark.circle.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.green)
         case .failed(let message):
@@ -366,12 +394,23 @@ private struct QuizStudyCard: View {
         }
     }
 
-    private var isSaveButtonDisabled: Bool {
+    private var areSaveControlsDisabled: Bool {
         if case .saving = saveState {
             return true
         }
 
         return answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func savedMessage(for attempt: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+        switch kind {
+        case .answerOnly:
+            return "저장됨 · #\(attempt.id)"
+        case .correct:
+            return "맞음으로 저장됨 · #\(attempt.id)"
+        case .reviewAgain:
+            return "다시 보기로 저장됨 · #\(attempt.id)"
+        }
     }
 
     private func displayTitle(for quizType: String) -> String {

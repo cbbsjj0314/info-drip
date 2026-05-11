@@ -14,7 +14,7 @@ struct ReaderWorkspace: View {
     let onGlossary: (PDFTextSelection) -> Void
     let onQuiz: (PDFTextSelection) -> Void
     let onStudyQuiz: (PDFTextSelection, Int) -> Void
-    let onSaveQuizAttempt: (Int, String) async throws -> BackendQuizAttempt
+    let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
     @State private var activeQuickActionSheet: QuickActionSheet?
