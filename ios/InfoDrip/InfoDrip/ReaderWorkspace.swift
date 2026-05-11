@@ -13,6 +13,7 @@ struct ReaderWorkspace: View {
     let onExplain: (PDFTextSelection) -> Void
     let onGlossary: (PDFTextSelection) -> Void
     let onQuiz: (PDFTextSelection) -> Void
+    let onStudyQuiz: (PDFTextSelection, Int) -> Void
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
     @State private var activeQuickActionSheet: QuickActionSheet?
@@ -40,6 +41,7 @@ struct ReaderWorkspace: View {
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canRunQuickAction: canRunQuickAction,
                                 onSelect: handleQuickAction,
+                                onStudyQuiz: handleStudyQuiz,
                                 onOpenExplanationDetail: openExplanationDetail,
                                 onOpenGlossaryDetail: openGlossaryDetail,
                                 onOpenQuizStudy: openQuizStudy
@@ -150,6 +152,11 @@ struct ReaderWorkspace: View {
         case .quiz:
             onQuiz(selection)
         }
+    }
+
+    private func handleStudyQuiz(maxQuizzes: Int) {
+        selectedQuickAction = .quiz
+        onStudyQuiz(selection, maxQuizzes)
     }
 
     private func openExplanationDetail(_ explanation: BackendExplanation) {
