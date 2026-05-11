@@ -147,6 +147,8 @@ private struct ReaderWorkspace: View {
     let onQuiz: (PDFTextSelection) -> Void
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
+    @State private var isQuizStudyPresented = false
+    @State private var quizStudyQuizzes: [BackendQuiz] = []
     @State private var selection = PDFTextSelection.empty
     @State private var selectedQuickAction: QuickAction?
 
@@ -170,7 +172,8 @@ private struct ReaderWorkspace: View {
                                 quizState: quizState,
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canRunQuickAction: canRunQuickAction,
-                                onSelect: handleQuickAction
+                                onSelect: handleQuickAction,
+                                onOpenQuizStudy: openQuizStudy
                             )
                             .padding(.horizontal, 24)
                             .padding(.bottom, 20)
@@ -207,6 +210,14 @@ private struct ReaderWorkspace: View {
                             pageCount: pageCount
                         )
                             .presentationDetents([.medium])
+                    }
+                    .sheet(
+                        isPresented: $isQuizStudyPresented,
+                        onDismiss: {
+                            quizStudyQuizzes = []
+                        }
+                    ) {
+                        QuizStudySheet(quizzes: quizStudyQuizzes)
                     }
             } else {
                 EmptyReaderState(onImport: onImport)
@@ -268,6 +279,11 @@ private struct ReaderWorkspace: View {
         case .quiz:
             onQuiz(selection)
         }
+    }
+
+    private func openQuizStudy(_ quizzes: [BackendQuiz]) {
+        quizStudyQuizzes = quizzes
+        isQuizStudyPresented = true
     }
 }
 
@@ -429,6 +445,7 @@ private struct QuickActionPanel: View {
     let highlightAvailabilityMessage: String?
     let canRunQuickAction: Bool
     let onSelect: (QuickAction) -> Void
+    let onOpenQuizStudy: ([BackendQuiz]) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -589,6 +606,14 @@ private struct QuickActionPanel: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
+                        Button {
+                            onOpenQuizStudy(quizzes)
+                        } label: {
+                            Label("공부 모드 열기", systemImage: "rectangle.stack.badge.play")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+
                         ForEach(quizzes, id: \.id) { quiz in
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(displayTitle(for: quiz.quizType))
@@ -729,6 +754,147 @@ private struct QuickActionPanel: View {
         switch action {
         case .highlight, .explain, .glossary, .quiz:
             return !canRunQuickAction
+        }
+    }
+
+    private func displayTitle(for quizType: String) -> String {
+        switch quizType {
+        case "short_answer":
+            return "단답형"
+        case "fill_blank":
+            return "빈칸"
+        default:
+            return quizType
+        }
+    }
+}
+
+private struct QuizStudySheet: View {
+    let quizzes: [BackendQuiz]
+    @Environment(\.dismiss) private var dismiss
+    @State private var answersByQuizID: [Int: String] = [:]
+    @State private var revealedQuizIDs: Set<Int> = []
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if quizzes.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "questionmark.square.dashed")
+                            .font(.system(size: 36, weight: .light))
+                            .foregroundStyle(.secondary)
+                        Text("생성된 퀴즈가 없습니다.")
+                            .font(.headline)
+                        Text("선택한 문장에서 퀴즈를 먼저 생성한 뒤 공부 모드를 열 수 있습니다.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(40)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(quizzes, id: \.id) { quiz in
+                            QuizStudyCard(
+                                quiz: quiz,
+                                answer: Binding(
+                                    get: { answersByQuizID[quiz.id, default: ""] },
+                                    set: { answersByQuizID[quiz.id] = $0 }
+                                ),
+                                isRevealed: Binding(
+                                    get: { revealedQuizIDs.contains(quiz.id) },
+                                    set: { isRevealed in
+                                        if isRevealed {
+                                            revealedQuizIDs.insert(quiz.id)
+                                        } else {
+                                            revealedQuizIDs.remove(quiz.id)
+                                        }
+                                    }
+                                )
+                            )
+                        }
+                    }
+                    .padding(24)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("퀴즈 공부")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("닫기") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct QuizStudyCard: View {
+    let quiz: BackendQuiz
+    @Binding var answer: String
+    @Binding var isRevealed: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(displayTitle(for: quiz.quizType))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(quiz.question)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("내 답안")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                TextEditor(text: $answer)
+                    .frame(minHeight: 96)
+                    .padding(8)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color(.separator), lineWidth: 0.5)
+                    }
+            }
+
+            Button {
+                isRevealed.toggle()
+            } label: {
+                Label(isRevealed ? "답 숨기기" : "답 보기", systemImage: isRevealed ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.bordered)
+
+            if isRevealed {
+                VStack(alignment: .leading, spacing: 10) {
+                    answerBlock(title: "정답", text: quiz.answer)
+                    answerBlock(title: "해설", text: quiz.explanation)
+                    answerBlock(title: "근거", text: quiz.sourceText)
+                }
+                .transition(.opacity)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(.separator), lineWidth: 0.5)
+        }
+    }
+
+    private func answerBlock(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
