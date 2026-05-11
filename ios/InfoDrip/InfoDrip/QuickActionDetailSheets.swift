@@ -159,9 +159,11 @@ struct GlossaryDetailSheet: View {
 
 struct QuizStudySheet: View {
     let quizzes: [BackendQuiz]
+    let onSaveAttempt: (Int, String) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
     @State private var answersByQuizID: [Int: String] = [:]
     @State private var revealedQuizIDs: Set<Int> = []
+    @State private var saveStatesByQuizID: [Int: QuizAttemptSaveState] = [:]
 
     var body: some View {
         NavigationStack {
@@ -185,10 +187,7 @@ struct QuizStudySheet: View {
                         ForEach(quizzes, id: \.id) { quiz in
                             QuizStudyCard(
                                 quiz: quiz,
-                                answer: Binding(
-                                    get: { answersByQuizID[quiz.id, default: ""] },
-                                    set: { answersByQuizID[quiz.id] = $0 }
-                                ),
+                                answer: answerBinding(for: quiz),
                                 isRevealed: Binding(
                                     get: { revealedQuizIDs.contains(quiz.id) },
                                     set: { isRevealed in
@@ -198,7 +197,11 @@ struct QuizStudySheet: View {
                                             revealedQuizIDs.remove(quiz.id)
                                         }
                                     }
-                                )
+                                ),
+                                saveState: saveStatesByQuizID[quiz.id, default: .idle],
+                                onSave: {
+                                    saveAttempt(for: quiz)
+                                }
                             )
                         }
                     }
@@ -217,12 +220,57 @@ struct QuizStudySheet: View {
             }
         }
     }
+
+    private func answerBinding(for quiz: BackendQuiz) -> Binding<String> {
+        Binding(
+            get: { answersByQuizID[quiz.id, default: ""] },
+            set: { newValue in
+                answersByQuizID[quiz.id] = newValue
+
+                switch saveStatesByQuizID[quiz.id, default: .idle] {
+                case .saved, .failed:
+                    saveStatesByQuizID[quiz.id] = .idle
+                case .idle, .saving:
+                    break
+                }
+            }
+        )
+    }
+
+    private func saveAttempt(for quiz: BackendQuiz) {
+        let normalizedAnswer = answersByQuizID[quiz.id, default: ""]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedAnswer.isEmpty else {
+            saveStatesByQuizID[quiz.id] = .failed("답안을 입력한 뒤 저장할 수 있습니다.")
+            return
+        }
+
+        saveStatesByQuizID[quiz.id] = .saving
+
+        Task { @MainActor in
+            do {
+                let attempt = try await onSaveAttempt(quiz.id, normalizedAnswer)
+                saveStatesByQuizID[quiz.id] = .saved(attempt)
+            } catch {
+                saveStatesByQuizID[quiz.id] = .failed(error.localizedDescription)
+            }
+        }
+    }
+}
+
+private enum QuizAttemptSaveState: Equatable {
+    case idle
+    case saving
+    case saved(BackendQuizAttempt)
+    case failed(String)
 }
 
 private struct QuizStudyCard: View {
     let quiz: BackendQuiz
     @Binding var answer: String
     @Binding var isRevealed: Bool
+    let saveState: QuizAttemptSaveState
+    let onSave: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -250,12 +298,27 @@ private struct QuizStudyCard: View {
                     }
             }
 
-            Button {
-                isRevealed.toggle()
-            } label: {
-                Label(isRevealed ? "답 숨기기" : "답 보기", systemImage: isRevealed ? "eye.slash" : "eye")
+            HStack(spacing: 10) {
+                Button(action: onSave) {
+                    Label("답안 저장", systemImage: "tray.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSaveButtonDisabled)
+
+                Button {
+                    isRevealed.toggle()
+                } label: {
+                    Label(isRevealed ? "답 숨기기" : "답 보기", systemImage: isRevealed ? "eye.slash" : "eye")
+                }
+                .buttonStyle(.bordered)
+
+                if case .saving = saveState {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
-            .buttonStyle(.bordered)
+
+            saveStatusView
 
             if isRevealed {
                 VStack(alignment: .leading, spacing: 10) {
@@ -284,6 +347,31 @@ private struct QuizStudyCard: View {
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    @ViewBuilder
+    private var saveStatusView: some View {
+        switch saveState {
+        case .idle, .saving:
+            EmptyView()
+        case .saved(let attempt):
+            Label("저장됨 · #\(attempt.id)", systemImage: "checkmark.circle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.green)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var isSaveButtonDisabled: Bool {
+        if case .saving = saveState {
+            return true
+        }
+
+        return answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func displayTitle(for quizType: String) -> String {

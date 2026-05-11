@@ -52,6 +52,12 @@ struct ContentView: View {
                         maxQuizzes: count
                     )
                 },
+                onSaveQuizAttempt: { quizID, userAnswer in
+                    try await pdfStore.createQuizAttempt(
+                        quizID: quizID,
+                        userAnswer: userAnswer
+                    )
+                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
                     pdfStore.clearExplanationState()

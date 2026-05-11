@@ -14,6 +14,7 @@ struct ReaderWorkspace: View {
     let onGlossary: (PDFTextSelection) -> Void
     let onQuiz: (PDFTextSelection) -> Void
     let onStudyQuiz: (PDFTextSelection, Int) -> Void
+    let onSaveQuizAttempt: (Int, String) async throws -> BackendQuizAttempt
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
     @State private var activeQuickActionSheet: QuickActionSheet?
@@ -89,7 +90,10 @@ struct ReaderWorkspace: View {
                         case .glossary(let snapshot):
                             GlossaryDetailSheet(glossaryTerms: snapshot.terms)
                         case .quiz(let snapshot):
-                            QuizStudySheet(quizzes: snapshot.quizzes)
+                            QuizStudySheet(
+                                quizzes: snapshot.quizzes,
+                                onSaveAttempt: onSaveQuizAttempt
+                            )
                         }
                     }
             } else {

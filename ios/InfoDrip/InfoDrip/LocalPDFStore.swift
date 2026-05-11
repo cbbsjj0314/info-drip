@@ -123,6 +123,24 @@ struct BackendQuiz: Equatable, Decodable {
     }
 }
 
+struct BackendQuizAttempt: Equatable, Decodable {
+    let id: Int
+    let quizID: Int
+    let userAnswer: String
+    let isCorrect: Bool?
+    let feedback: String?
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case quizID = "quiz_id"
+        case userAnswer = "user_answer"
+        case isCorrect = "is_correct"
+        case feedback
+        case createdAt = "created_at"
+    }
+}
+
 enum PDFUploadState: Equatable {
     case idle
     case uploading
@@ -298,6 +316,46 @@ struct BackendAPIClient {
         return try JSONDecoder().decode([BackendQuiz].self, from: data)
     }
 
+    func createQuizAttempt(
+        quizID: Int,
+        userAnswer: String,
+        isCorrect: Bool? = nil,
+        feedback: String? = nil
+    ) async throws -> BackendQuizAttempt {
+        let normalizedAnswer = userAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedAnswer.isEmpty else {
+            throw BackendAPIError.invalidRequest("Enter an answer before saving.")
+        }
+
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/quizzes")
+            .appendingPathComponent(String(quizID))
+            .appendingPathComponent("attempts")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            QuizAttemptCreatePayload(
+                userAnswer: normalizedAnswer,
+                isCorrect: isCorrect,
+                feedback: feedback
+            )
+        )
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 201 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode(BackendQuizAttempt.self, from: data)
+    }
+
     private func multipartBody(fileURL: URL, fieldName: String, boundary: String) throws -> Data {
         var body = Data()
         let filename = fileURL.lastPathComponent
@@ -334,16 +392,31 @@ struct BackendAPIClient {
             case maxQuizzes = "max_quizzes"
         }
     }
+
+    private struct QuizAttemptCreatePayload: Encodable {
+        let userAnswer: String
+        let isCorrect: Bool?
+        let feedback: String?
+
+        enum CodingKeys: String, CodingKey {
+            case userAnswer = "user_answer"
+            case isCorrect = "is_correct"
+            case feedback
+        }
+    }
 }
 
 enum BackendAPIError: LocalizedError {
     case invalidResponse
+    case invalidRequest(String)
     case requestFailed(statusCode: Int, message: String?)
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
             return "Backend returned an invalid response."
+        case .invalidRequest(let message):
+            return message
         case .requestFailed(let statusCode, let message):
             if let message, !message.isEmpty {
                 return "Backend request failed (\(statusCode)): \(message)"
@@ -523,6 +596,20 @@ final class LocalPDFStore: ObservableObject {
 
     func clearQuizState() {
         quizState = .idle
+    }
+
+    func createQuizAttempt(
+        quizID: Int,
+        userAnswer: String,
+        isCorrect: Bool? = nil,
+        feedback: String? = nil
+    ) async throws -> BackendQuizAttempt {
+        try await apiClient.createQuizAttempt(
+            quizID: quizID,
+            userAnswer: userAnswer,
+            isCorrect: isCorrect,
+            feedback: feedback
+        )
     }
 
     private func upload(documentID: UUID, fileURL: URL) async {
