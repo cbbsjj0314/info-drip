@@ -17,9 +17,9 @@ __pycache__/
 # Backend local data
 backend/data/
 backend/uploads/
-backend/*.db
-backend/*.sqlite
-backend/*.sqlite3
+backend/**/*.db
+backend/**/*.sqlite
+backend/**/*.sqlite3
 
 # macOS
 .DS_Store
