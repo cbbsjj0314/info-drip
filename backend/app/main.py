@@ -30,6 +30,7 @@ from app.database import (
 )
 from app.llm import (
     ALLOWED_QUIZ_TYPES,
+    DEFAULT_QUIZZES_PER_REQUEST,
     ExplanationRequest,
     GlossaryExtractionRequest,
     LLMProvider,
@@ -111,7 +112,11 @@ class GlossaryTermResponse(BaseModel):
 
 class QuizGenerationOptions(BaseModel):
     quiz_types: list[str] = Field(default_factory=lambda: list(ALLOWED_QUIZ_TYPES))
-    max_quizzes: int = Field(default=MAX_QUIZZES_PER_REQUEST, ge=1, le=2)
+    max_quizzes: int = Field(
+        default=DEFAULT_QUIZZES_PER_REQUEST,
+        ge=1,
+        le=MAX_QUIZZES_PER_REQUEST,
+    )
 
     @field_validator("quiz_types")
     @classmethod

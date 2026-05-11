@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import database
 from app.llm import (
+    DEFAULT_QUIZZES_PER_REQUEST,
     ExplanationContent,
     ExplanationRequest,
     ExplanationResponse,
@@ -928,7 +929,7 @@ def test_create_highlight_quizzes_without_body_uses_defaults_and_stores_log() ->
                 surrounding_context="Same page context for selected text.",
                 document_title="Learning Sample",
                 quiz_types=["short_answer", "fill_blank"],
-                max_quizzes=2,
+                max_quizzes=DEFAULT_QUIZZES_PER_REQUEST,
             )
         ]
 
@@ -1041,6 +1042,117 @@ def test_create_highlight_quizzes_deduplicates_types_and_caps_page_context() -> 
             )
         ]
         assert "Other page context." not in captured_requests[0].surrounding_context
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_quizzes_passes_explicit_study_max_and_stores_results() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(
+        test_session,
+        ["Page text for configurable quiz count."],
+        title="Study Sample",
+    )
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=1,
+            selected_text="Configurable quiz count concept.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    captured_requests: list[QuizGenerationRequest] = []
+
+    class CapturingProvider:
+        provider = "fake"
+        model = "fake-explanation-v1"
+
+        def generate_quizzes(
+            self,
+            request: QuizGenerationRequest,
+        ) -> QuizGenerationResponse:
+            captured_requests.append(request)
+            return QuizGenerationResponse(
+                content=QuizGenerationContent(
+                    quizzes=[
+                        {
+                            "quiz_type": request.quiz_types[
+                                index % len(request.quiz_types)
+                            ],
+                            "question": f"Question {index + 1}?",
+                            "answer": f"Answer {index + 1}.",
+                            "explanation": f"Explanation {index + 1}.",
+                            "source_text": "Configurable quiz count",
+                        }
+                        for index in range(request.max_quizzes)
+                    ]
+                ),
+                usage=LLMUsageMetadata(
+                    provider=self.provider,
+                    model=self.model,
+                    prompt_tokens=6,
+                    completion_tokens=20,
+                    total_tokens=26,
+                    estimated_cost=Decimal("0.000000"),
+                ),
+            )
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = CapturingProvider
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(
+            f"/api/v1/highlights/{highlight_id}/quizzes",
+            json={
+                "quiz_types": ["short_answer", "fill_blank"],
+                "max_quizzes": 4,
+            },
+        )
+
+        assert response.status_code == 201
+        payload = response.json()
+        assert len(payload) == 4
+        assert [item["quiz_type"] for item in payload] == [
+            "short_answer",
+            "fill_blank",
+            "short_answer",
+            "fill_blank",
+        ]
+        assert {item["document_id"] for item in payload} == {document_id}
+        assert {item["highlight_id"] for item in payload} == {highlight_id}
+        assert all("id" in item for item in payload)
+        assert all("created_at" in item for item in payload)
+        assert captured_requests == [
+            QuizGenerationRequest(
+                selected_text="Configurable quiz count concept.",
+                surrounding_context="Page text for configurable quiz count.",
+                document_title="Study Sample",
+                quiz_types=["short_answer", "fill_blank"],
+                max_quizzes=4,
+            )
+        ]
+
+        with test_session() as session:
+            quizzes = session.scalars(
+                select(database.Quiz).order_by(database.Quiz.id)
+            ).all()
+            assert len(quizzes) == 4
+            assert [quiz.quiz_type for quiz in quizzes] == [
+                "short_answer",
+                "fill_blank",
+                "short_answer",
+                "fill_blank",
+            ]
+            assert {quiz.document_id for quiz in quizzes} == {document_id}
+            assert {quiz.highlight_id for quiz in quizzes} == {highlight_id}
+            log = session.scalars(select(database.LLMRequestLog)).one()
+            assert log.task_type == "quiz_generation"
+            assert log.status == "success"
     finally:
         app.dependency_overrides.clear()
 
@@ -1280,7 +1392,7 @@ def test_create_highlight_quizzes_rejects_invalid_request_body() -> None:
         )
         invalid_max_response = client.post(
             f"/api/v1/highlights/{highlight_id}/quizzes",
-            json={"max_quizzes": 3},
+            json={"max_quizzes": 11},
         )
 
         assert unknown_type_response.status_code == 422
