@@ -189,6 +189,24 @@ class QuizAttemptResponse(BaseModel):
     created_at: datetime
 
 
+class ReviewAgainQuizAttemptResponse(BaseModel):
+    attempt_id: int
+    quiz_id: int
+    document_id: int
+    highlight_id: int
+    user_answer: str
+    is_correct: bool | None
+    feedback: str | None
+    attempted_at: datetime
+    quiz_type: str
+    question: str
+    answer: str
+    explanation: str
+    source_text: str
+    document_title: str
+    page_number: int
+
+
 def get_upload_dir() -> Path:
     return Path(os.getenv(UPLOAD_DIR_ENV_VAR, DEFAULT_UPLOAD_DIR))
 
@@ -301,6 +319,31 @@ def explanation_to_response(explanation: LLMExplanation) -> LLMExplanationRespon
         provider=explanation.provider,
         model=explanation.model,
         created_at=explanation.created_at,
+    )
+
+
+def review_again_attempt_to_response(
+    attempt: QuizAttempt,
+    quiz: Quiz,
+    highlight: Highlight,
+    document: Document,
+) -> ReviewAgainQuizAttemptResponse:
+    return ReviewAgainQuizAttemptResponse(
+        attempt_id=attempt.id,
+        quiz_id=quiz.id,
+        document_id=quiz.document_id,
+        highlight_id=quiz.highlight_id,
+        user_answer=attempt.user_answer,
+        is_correct=attempt.is_correct,
+        feedback=attempt.feedback,
+        attempted_at=attempt.created_at,
+        quiz_type=quiz.quiz_type,
+        question=quiz.question,
+        answer=quiz.answer,
+        explanation=quiz.explanation,
+        source_text=quiz.source_text,
+        document_title=document.title,
+        page_number=highlight.page_number,
     )
 
 
@@ -702,6 +745,37 @@ def create_quiz_attempt(
     db.refresh(attempt)
 
     return attempt
+
+
+@app.get(
+    "/api/v1/quiz-attempts/review-again",
+    response_model=list[ReviewAgainQuizAttemptResponse],
+)
+def list_review_again_quiz_attempts(
+    document_id: int | None = None,
+    db: Session = Depends(get_db_session),
+) -> list[ReviewAgainQuizAttemptResponse]:
+    if document_id is not None and db.get(Document, document_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    statement = (
+        select(QuizAttempt, Quiz, Highlight, Document)
+        .join(Quiz, QuizAttempt.quiz_id == Quiz.id)
+        .join(Highlight, Quiz.highlight_id == Highlight.id)
+        .join(Document, Quiz.document_id == Document.id)
+        .where(QuizAttempt.is_correct.is_(False))
+        .order_by(QuizAttempt.created_at.desc(), QuizAttempt.id.desc())
+    )
+    if document_id is not None:
+        statement = statement.where(Quiz.document_id == document_id)
+
+    return [
+        review_again_attempt_to_response(attempt, quiz, highlight, document)
+        for attempt, quiz, highlight, document in db.execute(statement).all()
+    ]
 
 
 @app.get(
