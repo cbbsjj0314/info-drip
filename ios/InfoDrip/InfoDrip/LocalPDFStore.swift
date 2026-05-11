@@ -95,6 +95,34 @@ struct BackendGlossaryTerm: Equatable, Decodable {
     }
 }
 
+struct BackendQuiz: Equatable, Decodable {
+    let id: Int
+    let documentID: Int
+    let highlightID: Int
+    let quizType: String
+    let question: String
+    let answer: String
+    let explanation: String
+    let sourceText: String
+    let provider: String
+    let model: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case documentID = "document_id"
+        case highlightID = "highlight_id"
+        case quizType = "quiz_type"
+        case question
+        case answer
+        case explanation
+        case sourceText = "source_text"
+        case provider
+        case model
+        case createdAt = "created_at"
+    }
+}
+
 enum PDFUploadState: Equatable {
     case idle
     case uploading
@@ -120,6 +148,13 @@ enum GlossaryState: Equatable {
     case idle
     case loading
     case loaded([BackendGlossaryTerm])
+    case failed(String)
+}
+
+enum QuizState: Equatable {
+    case idle
+    case loading
+    case loaded([BackendQuiz])
     case failed(String)
 }
 
@@ -232,6 +267,28 @@ struct BackendAPIClient {
         return try JSONDecoder().decode([BackendGlossaryTerm].self, from: data)
     }
 
+    func createQuizzes(highlightID: Int) async throws -> [BackendQuiz] {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/highlights")
+            .appendingPathComponent(String(highlightID))
+            .appendingPathComponent("quizzes")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 201 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode([BackendQuiz].self, from: data)
+    }
+
     private func multipartBody(fileURL: URL, fieldName: String, boundary: String) throws -> Data {
         var body = Data()
         let filename = fileURL.lastPathComponent
@@ -290,6 +347,7 @@ final class LocalPDFStore: ObservableObject {
     @Published private(set) var highlightSaveState: HighlightSaveState = .idle
     @Published private(set) var explanationState: ExplanationState = .idle
     @Published private(set) var glossaryState: GlossaryState = .idle
+    @Published private(set) var quizState: QuizState = .idle
     @Published private(set) var lastSavedHighlight: BackendHighlight?
 
     private let apiClient: BackendAPIClient
@@ -309,6 +367,7 @@ final class LocalPDFStore: ObservableObject {
         highlightSaveState = .idle
         explanationState = .idle
         glossaryState = .idle
+        quizState = .idle
         lastSavedHighlight = nil
 
         Task {
@@ -401,6 +460,34 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
+    func createQuizzesForSelection(text: String, pageNumber: Int?) {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            quizState = .failed("Backend document is not ready.")
+            return
+        }
+
+        guard let pageNumber else {
+            quizState = .failed("Could not find the selected page.")
+            return
+        }
+
+        let selectedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedText.isEmpty else {
+            quizState = .failed("Select text before requesting quizzes.")
+            return
+        }
+
+        quizState = .loading
+
+        Task {
+            await createQuizzes(
+                documentID: backendDocument.id,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+        }
+    }
+
     func clearHighlightSaveState() {
         highlightSaveState = .idle
         lastSavedHighlight = nil
@@ -412,6 +499,10 @@ final class LocalPDFStore: ObservableObject {
 
     func clearGlossaryState() {
         glossaryState = .idle
+    }
+
+    func clearQuizState() {
+        quizState = .idle
     }
 
     private func upload(documentID: UUID, fileURL: URL) async {
@@ -505,6 +596,33 @@ final class LocalPDFStore: ObservableObject {
                 highlightSaveState = .failed(error.localizedDescription)
             }
             glossaryState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func createQuizzes(documentID: Int, pageNumber: Int, selectedText: String) async {
+        do {
+            let highlight = try await highlightForCurrentSelection(
+                documentID: documentID,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+            let quizzes = try await apiClient.createQuizzes(highlightID: highlight.id)
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            lastSavedHighlight = highlight
+            highlightSaveState = .saved(highlight)
+            quizState = .loaded(quizzes)
+        } catch {
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            if case .saving = highlightSaveState {
+                highlightSaveState = .failed(error.localizedDescription)
+            }
+            quizState = .failed(error.localizedDescription)
         }
     }
 

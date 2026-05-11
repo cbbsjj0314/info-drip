@@ -18,6 +18,7 @@ struct ContentView: View {
                 highlightSaveState: pdfStore.highlightSaveState,
                 explanationState: pdfStore.explanationState,
                 glossaryState: pdfStore.glossaryState,
+                quizState: pdfStore.quizState,
                 pageCount: $pageCount,
                 onImport: { isImporterPresented = true },
                 onSaveHighlight: { selection in
@@ -38,10 +39,17 @@ struct ContentView: View {
                         pageNumber: selection.pageNumber
                     )
                 },
+                onQuiz: { selection in
+                    pdfStore.createQuizzesForSelection(
+                        text: selection.text,
+                        pageNumber: selection.pageNumber
+                    )
+                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
                     pdfStore.clearExplanationState()
                     pdfStore.clearGlossaryState()
+                    pdfStore.clearQuizState()
                 }
             )
         }
@@ -130,11 +138,13 @@ private struct ReaderWorkspace: View {
     let highlightSaveState: HighlightSaveState
     let explanationState: ExplanationState
     let glossaryState: GlossaryState
+    let quizState: QuizState
     @Binding var pageCount: Int
     let onImport: () -> Void
     let onSaveHighlight: (PDFTextSelection) -> Void
     let onExplain: (PDFTextSelection) -> Void
     let onGlossary: (PDFTextSelection) -> Void
+    let onQuiz: (PDFTextSelection) -> Void
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
     @State private var selection = PDFTextSelection.empty
@@ -157,8 +167,9 @@ private struct ReaderWorkspace: View {
                                 highlightSaveState: highlightSaveState,
                                 explanationState: explanationState,
                                 glossaryState: glossaryState,
+                                quizState: quizState,
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
-                                canSaveHighlight: canSaveHighlight,
+                                canRunQuickAction: canRunQuickAction,
                                 onSelect: handleQuickAction
                             )
                             .padding(.horizontal, 24)
@@ -203,7 +214,7 @@ private struct ReaderWorkspace: View {
         }
     }
 
-    private var canSaveHighlight: Bool {
+    private var canRunQuickAction: Bool {
         if case .saving = highlightSaveState {
             return false
         }
@@ -213,6 +224,10 @@ private struct ReaderWorkspace: View {
         }
 
         if case .loading = glossaryState {
+            return false
+        }
+
+        if case .loading = quizState {
             return false
         }
 
@@ -251,7 +266,7 @@ private struct ReaderWorkspace: View {
         case .glossary:
             onGlossary(selection)
         case .quiz:
-            return
+            onQuiz(selection)
         }
     }
 }
@@ -410,8 +425,9 @@ private struct QuickActionPanel: View {
     let highlightSaveState: HighlightSaveState
     let explanationState: ExplanationState
     let glossaryState: GlossaryState
+    let quizState: QuizState
     let highlightAvailabilityMessage: String?
-    let canSaveHighlight: Bool
+    let canRunQuickAction: Bool
     let onSelect: (QuickAction) -> Void
 
     var body: some View {
@@ -451,6 +467,7 @@ private struct QuickActionPanel: View {
 
             explanationContent
             glossaryContent
+            quizContent
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -481,6 +498,17 @@ private struct QuickActionPanel: View {
                 return "용어를 추출하는 중..."
             case .loaded(let glossaryTerms):
                 return "용어 추출됨 · \(glossaryTerms.count)개"
+            case .failed(let message):
+                return message
+            }
+        } else if selectedAction == .quiz {
+            switch quizState {
+            case .idle:
+                return highlightAvailabilityMessage
+            case .loading:
+                return "퀴즈를 생성하는 중..."
+            case .loaded(let quizzes):
+                return "퀴즈 생성됨 · \(quizzes.count)개"
             case .failed(let message):
                 return message
             }
@@ -521,6 +549,17 @@ private struct QuickActionPanel: View {
             }
         }
 
+        if selectedAction == .quiz {
+            switch quizState {
+            case .loaded:
+                return .green
+            case .failed:
+                return .red
+            case .idle, .loading:
+                return .secondary
+            }
+        }
+
         switch highlightSaveState {
         case .saved:
             return .green
@@ -528,6 +567,64 @@ private struct QuickActionPanel: View {
             return .red
         case .idle, .saving:
             return .secondary
+        }
+    }
+
+    @ViewBuilder
+    private var quizContent: some View {
+        if selectedAction == .quiz {
+            switch quizState {
+            case .loading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("선택한 문장을 backend에서 퀴즈로 바꾸고 있습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .loaded(let quizzes):
+                VStack(alignment: .leading, spacing: 10) {
+                    if quizzes.isEmpty {
+                        Text("생성된 퀴즈가 없습니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(quizzes, id: \.id) { quiz in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(displayTitle(for: quiz.quizType))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+
+                                Text(quiz.question)
+                                    .font(.subheadline.weight(.semibold))
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                LabeledContent("정답") {
+                                    Text(quiz.answer)
+                                        .font(.caption)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+
+                                LabeledContent("설명") {
+                                    Text(quiz.explanation)
+                                        .font(.caption)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+
+                                Text(quiz.sourceText)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(3)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
+            case .failed, .idle:
+                EmptyView()
+            }
         }
     }
 
@@ -630,10 +727,19 @@ private struct QuickActionPanel: View {
 
     private func isDisabled(_ action: QuickAction) -> Bool {
         switch action {
-        case .highlight, .explain, .glossary:
-            return !canSaveHighlight
-        case .quiz:
-            return false
+        case .highlight, .explain, .glossary, .quiz:
+            return !canRunQuickAction
+        }
+    }
+
+    private func displayTitle(for quizType: String) -> String {
+        switch quizType {
+        case "short_answer":
+            return "단답형"
+        case "fill_blank":
+            return "빈칸"
+        default:
+            return quizType
         }
     }
 }

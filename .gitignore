@@ -27,5 +27,6 @@ backend/*.sqlite3
 # Xcode
 *.xcuserdata/
 *.xcuserstate
+.xcode-derived/
 DerivedData/
 build/
