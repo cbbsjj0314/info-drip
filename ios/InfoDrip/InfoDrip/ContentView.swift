@@ -147,6 +147,10 @@ private struct ReaderWorkspace: View {
     let onQuiz: (PDFTextSelection) -> Void
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
+    @State private var isExplanationDetailPresented = false
+    @State private var detailExplanation: BackendExplanation?
+    @State private var isGlossaryDetailPresented = false
+    @State private var detailGlossaryTerms: [BackendGlossaryTerm] = []
     @State private var isQuizStudyPresented = false
     @State private var quizStudyQuizzes: [BackendQuiz] = []
     @State private var selection = PDFTextSelection.empty
@@ -173,6 +177,8 @@ private struct ReaderWorkspace: View {
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canRunQuickAction: canRunQuickAction,
                                 onSelect: handleQuickAction,
+                                onOpenExplanationDetail: openExplanationDetail,
+                                onOpenGlossaryDetail: openGlossaryDetail,
                                 onOpenQuizStudy: openQuizStudy
                             )
                             .padding(.horizontal, 24)
@@ -210,6 +216,22 @@ private struct ReaderWorkspace: View {
                             pageCount: pageCount
                         )
                             .presentationDetents([.medium])
+                    }
+                    .sheet(
+                        isPresented: $isExplanationDetailPresented,
+                        onDismiss: {
+                            detailExplanation = nil
+                        }
+                    ) {
+                        ExplanationDetailSheet(explanation: detailExplanation)
+                    }
+                    .sheet(
+                        isPresented: $isGlossaryDetailPresented,
+                        onDismiss: {
+                            detailGlossaryTerms = []
+                        }
+                    ) {
+                        GlossaryDetailSheet(glossaryTerms: detailGlossaryTerms)
                     }
                     .sheet(
                         isPresented: $isQuizStudyPresented,
@@ -279,6 +301,16 @@ private struct ReaderWorkspace: View {
         case .quiz:
             onQuiz(selection)
         }
+    }
+
+    private func openExplanationDetail(_ explanation: BackendExplanation) {
+        detailExplanation = explanation
+        isExplanationDetailPresented = true
+    }
+
+    private func openGlossaryDetail(_ glossaryTerms: [BackendGlossaryTerm]) {
+        detailGlossaryTerms = glossaryTerms
+        isGlossaryDetailPresented = true
     }
 
     private func openQuizStudy(_ quizzes: [BackendQuiz]) {
@@ -437,8 +469,9 @@ private struct UploadStatusView: View {
 }
 
 private struct QuickActionPanel: View {
-    private let loadedResultPreviewMaxHeight: CGFloat = 220
-    private let maxPreviewKeyPoints = 3
+    private let loadedResultPreviewMaxHeight: CGFloat = 160
+    private let maxPreviewKeyPoints = 2
+    private let maxPreviewGlossaryTerms = 2
 
     let selectedAction: QuickAction?
     let highlightSaveState: HighlightSaveState
@@ -448,6 +481,8 @@ private struct QuickActionPanel: View {
     let highlightAvailabilityMessage: String?
     let canRunQuickAction: Bool
     let onSelect: (QuickAction) -> Void
+    let onOpenExplanationDetail: (BackendExplanation) -> Void
+    let onOpenGlossaryDetail: ([BackendGlossaryTerm]) -> Void
     let onOpenQuizStudy: ([BackendQuiz]) -> Void
 
     var body: some View {
@@ -654,31 +689,52 @@ private struct QuickActionPanel: View {
                         .foregroundStyle(.secondary)
                 }
             case .loaded(let explanation):
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(explanation.summary)
-                        .font(.subheadline)
-                        .lineLimit(4)
+                if hasExplanationDetail(explanation) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button {
+                            onOpenExplanationDetail(explanation)
+                        } label: {
+                            Label("자세히 보기", systemImage: "doc.text.magnifyingglass")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
 
-                    if !explanation.keyPoints.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("핵심 포인트")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                        loadedResultPreview {
+                            VStack(alignment: .leading, spacing: 8) {
+                                let trimmedSummary = trimmed(explanation.summary)
+                                if !trimmedSummary.isEmpty {
+                                    Text(trimmedSummary)
+                                        .font(.subheadline)
+                                        .lineLimit(3)
+                                }
 
-                            ForEach(Array(explanation.keyPoints.prefix(maxPreviewKeyPoints)), id: \.self) { point in
-                                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.caption)
-                                        .foregroundStyle(.green)
-                                    Text(point)
-                                        .font(.caption)
-                                        .lineLimit(2)
+                                let previewKeyPoints = nonBlankKeyPoints(for: explanation).prefix(maxPreviewKeyPoints)
+                                if !previewKeyPoints.isEmpty {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text("핵심 포인트")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+
+                                        ForEach(Array(previewKeyPoints), id: \.self) { point in
+                                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.green)
+                                                Text(point)
+                                                    .font(.caption)
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                } else {
+                    Text("생성된 설명이 비어 있습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .modifier(LoadedResultPreviewModifier(maxHeight: loadedResultPreviewMaxHeight))
             case .failed, .idle:
                 EmptyView()
             }
@@ -703,27 +759,30 @@ private struct QuickActionPanel: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    loadedResultPreview {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(glossaryTerms, id: \.id) { glossaryTerm in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(glossaryTerm.term)
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(glossaryTerm.definition)
-                                        .font(.caption)
-                                        .lineLimit(3)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button {
+                            onOpenGlossaryDetail(glossaryTerms)
+                        } label: {
+                            Label("자세히 보기", systemImage: "text.book.closed")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
 
-                                    if let sourceText = glossaryTerm.sourceText,
-                                       !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                        Text(sourceText)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                        loadedResultPreview {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(Array(glossaryTerms.prefix(maxPreviewGlossaryTerms)), id: \.id) { glossaryTerm in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(glossaryTerm.term)
+                                            .font(.subheadline.weight(.semibold))
                                             .lineLimit(1)
+                                        Text(glossaryTerm.definition)
+                                            .font(.caption)
+                                            .lineLimit(2)
                                     }
-                                }
 
-                                if glossaryTerm.id != glossaryTerms.last?.id {
-                                    Divider()
+                                    if glossaryTerm.id != glossaryTerms.prefix(maxPreviewGlossaryTerms).last?.id {
+                                        Divider()
+                                    }
                                 }
                             }
                         }
@@ -753,6 +812,20 @@ private struct QuickActionPanel: View {
         }
     }
 
+    private func hasExplanationDetail(_ explanation: BackendExplanation) -> Bool {
+        !trimmed(explanation.summary).isEmpty || !nonBlankKeyPoints(for: explanation).isEmpty
+    }
+
+    private func nonBlankKeyPoints(for explanation: BackendExplanation) -> [String] {
+        explanation.keyPoints
+            .map(trimmed)
+            .filter { !$0.isEmpty }
+    }
+
+    private func trimmed(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func loadedResultPreview<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -772,6 +845,187 @@ private struct LoadedResultPreviewModifier: ViewModifier {
         .frame(maxHeight: maxHeight, alignment: .top)
         .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct ExplanationDetailSheet: View {
+    let explanation: BackendExplanation?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let explanation, hasContent(explanation) {
+                        let summary = trimmed(explanation.summary)
+                        if !summary.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("요약")
+                                    .font(.headline)
+                                Text(summary)
+                                    .font(.body)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+
+                        let keyPoints = nonBlankKeyPoints(for: explanation)
+                        if !keyPoints.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("핵심 포인트")
+                                    .font(.headline)
+
+                                ForEach(keyPoints, id: \.self) { point in
+                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.caption)
+                                            .foregroundStyle(.green)
+                                        Text(point)
+                                            .font(.body)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                        }
+
+                        Text("\(explanation.provider) · \(explanation.model)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        emptyState
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("쉽게 설명")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("닫기") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("표시할 설명이 없습니다.")
+                .font(.headline)
+            Text("설명을 다시 생성한 뒤 자세히 보기를 열어 주세요.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(40)
+    }
+
+    private func hasContent(_ explanation: BackendExplanation) -> Bool {
+        !trimmed(explanation.summary).isEmpty || !nonBlankKeyPoints(for: explanation).isEmpty
+    }
+
+    private func nonBlankKeyPoints(for explanation: BackendExplanation) -> [String] {
+        explanation.keyPoints
+            .map(trimmed)
+            .filter { !$0.isEmpty }
+    }
+
+    private func trimmed(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct GlossaryDetailSheet: View {
+    let glossaryTerms: [BackendGlossaryTerm]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if glossaryTerms.isEmpty {
+                    emptyState
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(glossaryTerms, id: \.id) { glossaryTerm in
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(glossaryTerm.term)
+                                    .font(.headline)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Text(glossaryTerm.definition)
+                                    .font(.body)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                if let sourceText = trimmedSourceText(for: glossaryTerm) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("근거")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                        Text(sourceText)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+
+                                Text("\(glossaryTerm.provider) · \(glossaryTerm.model)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(Color(.separator), lineWidth: 0.5)
+                            }
+                        }
+                    }
+                    .padding(24)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("용어")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("닫기") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "text.book.closed")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("표시할 용어가 없습니다.")
+                .font(.headline)
+            Text("용어를 다시 추출한 뒤 자세히 보기를 열어 주세요.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(40)
+    }
+
+    private func trimmedSourceText(for glossaryTerm: BackendGlossaryTerm) -> String? {
+        guard let sourceText = glossaryTerm.sourceText else {
+            return nil
+        }
+
+        let trimmedSourceText = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedSourceText.isEmpty ? nil : trimmedSourceText
     }
 }
 
