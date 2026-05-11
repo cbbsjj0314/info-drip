@@ -12,6 +12,9 @@
 		8B3F4A102C1A0001000A0001 /* LocalPDFStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A0B2C1A0001000A0001 /* LocalPDFStore.swift */; };
 		8B3F4A112C1A0001000A0001 /* PDFKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A0C2C1A0001000A0001 /* PDFKitView.swift */; };
 		8B3F4A122C1A0001000A0001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8B3F4A0D2C1A0001000A0001 /* Assets.xcassets */; };
+		8B3F4A1B2C1A0001000A0001 /* ReaderWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A182C1A0001000A0001 /* ReaderWorkspace.swift */; };
+		8B3F4A1C2C1A0001000A0001 /* QuickActionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A192C1A0001000A0001 /* QuickActionPanel.swift */; };
+		8B3F4A1D2C1A0001000A0001 /* QuickActionDetailSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A1A2C1A0001000A0001 /* QuickActionDetailSheets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +24,9 @@
 		8B3F4A0B2C1A0001000A0001 /* LocalPDFStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPDFStore.swift; sourceTree = "<group>"; };
 		8B3F4A0C2C1A0001000A0001 /* PDFKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFKitView.swift; sourceTree = "<group>"; };
 		8B3F4A0D2C1A0001000A0001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8B3F4A182C1A0001000A0001 /* ReaderWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderWorkspace.swift; sourceTree = "<group>"; };
+		8B3F4A192C1A0001000A0001 /* QuickActionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionPanel.swift; sourceTree = "<group>"; };
+		8B3F4A1A2C1A0001000A0001 /* QuickActionDetailSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionDetailSheets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +61,9 @@
 			children = (
 				8B3F4A092C1A0001000A0001 /* InfoDripApp.swift */,
 				8B3F4A0A2C1A0001000A0001 /* ContentView.swift */,
+				8B3F4A182C1A0001000A0001 /* ReaderWorkspace.swift */,
+				8B3F4A192C1A0001000A0001 /* QuickActionPanel.swift */,
+				8B3F4A1A2C1A0001000A0001 /* QuickActionDetailSheets.swift */,
 				8B3F4A0B2C1A0001000A0001 /* LocalPDFStore.swift */,
 				8B3F4A0C2C1A0001000A0001 /* PDFKitView.swift */,
 				8B3F4A0D2C1A0001000A0001 /* Assets.xcassets */,
@@ -134,6 +143,9 @@
 				8B3F4A102C1A0001000A0001 /* LocalPDFStore.swift in Sources */,
 				8B3F4A112C1A0001000A0001 /* PDFKitView.swift in Sources */,
 				8B3F4A0F2C1A0001000A0001 /* ContentView.swift in Sources */,
+				8B3F4A1B2C1A0001000A0001 /* ReaderWorkspace.swift in Sources */,
+				8B3F4A1C2C1A0001000A0001 /* QuickActionPanel.swift in Sources */,
+				8B3F4A1D2C1A0001000A0001 /* QuickActionDetailSheets.swift in Sources */,
 				8B3F4A0E2C1A0001000A0001 /* InfoDripApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
