@@ -267,13 +267,22 @@ struct BackendAPIClient {
         return try JSONDecoder().decode([BackendGlossaryTerm].self, from: data)
     }
 
-    func createQuizzes(highlightID: Int) async throws -> [BackendQuiz] {
+    func createQuizzes(highlightID: Int, maxQuizzes: Int? = nil) async throws -> [BackendQuiz] {
         let endpoint = baseURL
             .appendingPathComponent("api/v1/highlights")
             .appendingPathComponent(String(highlightID))
             .appendingPathComponent("quizzes")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
+        if let maxQuizzes {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(
+                QuizGenerationPayload(
+                    quizTypes: ["short_answer", "fill_blank"],
+                    maxQuizzes: maxQuizzes
+                )
+            )
+        }
 
         let (data, response) = try await session.data(for: request)
 
@@ -313,6 +322,16 @@ struct BackendAPIClient {
             case documentID = "document_id"
             case pageNumber = "page_number"
             case selectedText = "selected_text"
+        }
+    }
+
+    private struct QuizGenerationPayload: Encodable {
+        let quizTypes: [String]
+        let maxQuizzes: Int
+
+        enum CodingKeys: String, CodingKey {
+            case quizTypes = "quiz_types"
+            case maxQuizzes = "max_quizzes"
         }
     }
 }
@@ -460,7 +479,7 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
-    func createQuizzesForSelection(text: String, pageNumber: Int?) {
+    func createQuizzesForSelection(text: String, pageNumber: Int?, maxQuizzes: Int? = nil) {
         guard case .uploaded(let backendDocument) = uploadState else {
             quizState = .failed("Backend document is not ready.")
             return
@@ -483,7 +502,8 @@ final class LocalPDFStore: ObservableObject {
             await createQuizzes(
                 documentID: backendDocument.id,
                 pageNumber: pageNumber,
-                selectedText: selectedText
+                selectedText: selectedText,
+                maxQuizzes: maxQuizzes
             )
         }
     }
@@ -599,14 +619,22 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
-    private func createQuizzes(documentID: Int, pageNumber: Int, selectedText: String) async {
+    private func createQuizzes(
+        documentID: Int,
+        pageNumber: Int,
+        selectedText: String,
+        maxQuizzes: Int? = nil
+    ) async {
         do {
             let highlight = try await highlightForCurrentSelection(
                 documentID: documentID,
                 pageNumber: pageNumber,
                 selectedText: selectedText
             )
-            let quizzes = try await apiClient.createQuizzes(highlightID: highlight.id)
+            let quizzes = try await apiClient.createQuizzes(
+                highlightID: highlight.id,
+                maxQuizzes: maxQuizzes
+            )
             guard currentDocument?.backendDocument?.id == documentID else {
                 return
             }

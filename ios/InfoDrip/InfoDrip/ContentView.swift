@@ -45,6 +45,13 @@ struct ContentView: View {
                         pageNumber: selection.pageNumber
                     )
                 },
+                onStudyQuiz: { selection, count in
+                    pdfStore.createQuizzesForSelection(
+                        text: selection.text,
+                        pageNumber: selection.pageNumber,
+                        maxQuizzes: count
+                    )
+                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
                     pdfStore.clearExplanationState()

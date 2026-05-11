@@ -13,6 +13,7 @@ struct QuickActionPanel: View {
     let highlightAvailabilityMessage: String?
     let canRunQuickAction: Bool
     let onSelect: (QuickAction) -> Void
+    let onStudyQuiz: (Int) -> Void
     let onOpenExplanationDetail: (BackendExplanation) -> Void
     let onOpenGlossaryDetail: ([BackendGlossaryTerm]) -> Void
     let onOpenQuizStudy: ([BackendQuiz]) -> Void
@@ -160,52 +161,80 @@ struct QuickActionPanel: View {
     @ViewBuilder
     private var quizContent: some View {
         if selectedAction == .quiz {
-            switch quizState {
-            case .loading:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("선택한 문장을 backend에서 퀴즈로 바꾸고 있습니다.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .loaded(let quizzes):
-                if quizzes.isEmpty {
-                    Text("생성된 퀴즈가 없습니다.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    loadedResultPreview {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Button {
-                                onOpenQuizStudy(quizzes)
-                            } label: {
-                                Label("공부 모드 열기", systemImage: "rectangle.stack.badge.play")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.regular)
+            VStack(alignment: .leading, spacing: 10) {
+                switch quizState {
+                case .loading:
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("선택한 문장을 backend에서 퀴즈로 바꾸고 있습니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                case .loaded(let quizzes):
+                    quizActionRow(quizzes: quizzes)
 
-                            ForEach(quizzes, id: \.id) { quiz in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(displayTitle(for: quiz.quizType))
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
+                    if quizzes.isEmpty {
+                        Text("생성된 퀴즈가 없습니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        loadedResultPreview {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(quizzes, id: \.id) { quiz in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(displayTitle(for: quiz.quizType))
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
 
-                                    Text(quiz.question)
-                                        .font(.subheadline.weight(.semibold))
-                                        .fixedSize(horizontal: false, vertical: true)
+                                        Text(quiz.question)
+                                            .font(.subheadline.weight(.semibold))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    .padding(12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
                                 }
-                                .padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
                             }
                         }
                     }
+                case .failed, .idle:
+                    quizActionRow(quizzes: [])
                 }
-            case .failed, .idle:
-                EmptyView()
             }
         }
+    }
+
+    @ViewBuilder
+    private func quizActionRow(quizzes: [BackendQuiz]) -> some View {
+        HStack(spacing: 8) {
+            if !quizzes.isEmpty {
+                Button {
+                    onOpenQuizStudy(quizzes)
+                } label: {
+                    Label("공부 모드 열기", systemImage: "rectangle.stack.badge.play")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+            }
+
+            studyQuizMenu
+        }
+    }
+
+    private var studyQuizMenu: some View {
+        Menu {
+            ForEach([4, 6, 10], id: \.self) { count in
+                Button("\(count)문제") {
+                    onStudyQuiz(count)
+                }
+            }
+        } label: {
+            Label("문제 수", systemImage: "list.number")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .disabled(!canRunQuickAction)
     }
 
     @ViewBuilder
