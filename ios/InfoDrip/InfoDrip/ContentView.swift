@@ -147,12 +147,7 @@ private struct ReaderWorkspace: View {
     let onQuiz: (PDFTextSelection) -> Void
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
-    @State private var isExplanationDetailPresented = false
-    @State private var detailExplanation: BackendExplanation?
-    @State private var isGlossaryDetailPresented = false
-    @State private var detailGlossaryTerms: [BackendGlossaryTerm] = []
-    @State private var isQuizStudyPresented = false
-    @State private var quizStudyQuizzes: [BackendQuiz] = []
+    @State private var activeQuickActionSheet: QuickActionSheet?
     @State private var selection = PDFTextSelection.empty
     @State private var selectedQuickAction: QuickAction?
 
@@ -217,29 +212,15 @@ private struct ReaderWorkspace: View {
                         )
                             .presentationDetents([.medium])
                     }
-                    .sheet(
-                        isPresented: $isExplanationDetailPresented,
-                        onDismiss: {
-                            detailExplanation = nil
+                    .sheet(item: $activeQuickActionSheet) { sheet in
+                        switch sheet {
+                        case .explanation(let snapshot):
+                            ExplanationDetailSheet(explanation: snapshot.explanation)
+                        case .glossary(let snapshot):
+                            GlossaryDetailSheet(glossaryTerms: snapshot.terms)
+                        case .quiz(let snapshot):
+                            QuizStudySheet(quizzes: snapshot.quizzes)
                         }
-                    ) {
-                        ExplanationDetailSheet(explanation: detailExplanation)
-                    }
-                    .sheet(
-                        isPresented: $isGlossaryDetailPresented,
-                        onDismiss: {
-                            detailGlossaryTerms = []
-                        }
-                    ) {
-                        GlossaryDetailSheet(glossaryTerms: detailGlossaryTerms)
-                    }
-                    .sheet(
-                        isPresented: $isQuizStudyPresented,
-                        onDismiss: {
-                            quizStudyQuizzes = []
-                        }
-                    ) {
-                        QuizStudySheet(quizzes: quizStudyQuizzes)
                     }
             } else {
                 EmptyReaderState(onImport: onImport)
@@ -304,19 +285,48 @@ private struct ReaderWorkspace: View {
     }
 
     private func openExplanationDetail(_ explanation: BackendExplanation) {
-        detailExplanation = explanation
-        isExplanationDetailPresented = true
+        activeQuickActionSheet = .explanation(ExplanationSnapshot(explanation: explanation))
     }
 
     private func openGlossaryDetail(_ glossaryTerms: [BackendGlossaryTerm]) {
-        detailGlossaryTerms = glossaryTerms
-        isGlossaryDetailPresented = true
+        activeQuickActionSheet = .glossary(GlossarySnapshot(terms: glossaryTerms))
     }
 
     private func openQuizStudy(_ quizzes: [BackendQuiz]) {
-        quizStudyQuizzes = quizzes
-        isQuizStudyPresented = true
+        activeQuickActionSheet = .quiz(QuizStudySnapshot(quizzes: quizzes))
     }
+}
+
+private enum QuickActionSheet: Identifiable {
+    case explanation(ExplanationSnapshot)
+    case glossary(GlossarySnapshot)
+    case quiz(QuizStudySnapshot)
+
+    var id: UUID {
+        switch self {
+        case .explanation(let snapshot):
+            return snapshot.id
+        case .glossary(let snapshot):
+            return snapshot.id
+        case .quiz(let snapshot):
+            return snapshot.id
+        }
+    }
+}
+
+private struct ExplanationSnapshot {
+    let id = UUID()
+    let explanation: BackendExplanation
+}
+
+private struct GlossarySnapshot {
+    let id = UUID()
+    let terms: [BackendGlossaryTerm]
+}
+
+private struct QuizStudySnapshot {
+    let id = UUID()
+    let quizzes: [BackendQuiz]
 }
 
 private struct EmptyReaderState: View {
@@ -849,50 +859,46 @@ private struct LoadedResultPreviewModifier: ViewModifier {
 }
 
 private struct ExplanationDetailSheet: View {
-    let explanation: BackendExplanation?
+    let explanation: BackendExplanation
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if let explanation, hasContent(explanation) {
-                        let summary = trimmed(explanation.summary)
-                        if !summary.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("요약")
-                                    .font(.headline)
-                                Text(summary)
-                                    .font(.body)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                    let summary = trimmed(explanation.summary)
+                    if !summary.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("요약")
+                                .font(.headline)
+                            Text(summary)
+                                .font(.body)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
+                    }
 
-                        let keyPoints = nonBlankKeyPoints(for: explanation)
-                        if !keyPoints.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("핵심 포인트")
-                                    .font(.headline)
+                    let keyPoints = nonBlankKeyPoints(for: explanation)
+                    if !keyPoints.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("핵심 포인트")
+                                .font(.headline)
 
-                                ForEach(keyPoints, id: \.self) { point in
-                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.caption)
-                                            .foregroundStyle(.green)
-                                        Text(point)
-                                            .font(.body)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
+                            ForEach(keyPoints, id: \.self) { point in
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(.green)
+                                    Text(point)
+                                        .font(.body)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
                         }
-
-                        Text("\(explanation.provider) · \(explanation.model)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        emptyState
                     }
+
+                    Text("\(explanation.provider) · \(explanation.model)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -908,26 +914,6 @@ private struct ExplanationDetailSheet: View {
                 }
             }
         }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("표시할 설명이 없습니다.")
-                .font(.headline)
-            Text("설명을 다시 생성한 뒤 자세히 보기를 열어 주세요.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(40)
-    }
-
-    private func hasContent(_ explanation: BackendExplanation) -> Bool {
-        !trimmed(explanation.summary).isEmpty || !nonBlankKeyPoints(for: explanation).isEmpty
     }
 
     private func nonBlankKeyPoints(for explanation: BackendExplanation) -> [String] {
