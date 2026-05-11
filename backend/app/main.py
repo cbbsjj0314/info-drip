@@ -8,8 +8,8 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import Body, Depends, FastAPI, File, HTTPException, UploadFile, status
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy import select
@@ -23,13 +23,17 @@ from app.database import (
     Highlight,
     LLMExplanation,
     LLMRequestLog,
+    Quiz,
     engine,
     get_db_session,
 )
 from app.llm import (
+    ALLOWED_QUIZ_TYPES,
     ExplanationRequest,
     GlossaryExtractionRequest,
     LLMProvider,
+    MAX_QUIZZES_PER_REQUEST,
+    QuizGenerationRequest,
     build_llm_provider_from_env,
 )
 
@@ -99,6 +103,46 @@ class GlossaryTermResponse(BaseModel):
     term: str
     definition: str
     source_text: str | None
+    provider: str
+    model: str
+    created_at: datetime
+
+
+class QuizGenerationOptions(BaseModel):
+    quiz_types: list[str] = Field(default_factory=lambda: list(ALLOWED_QUIZ_TYPES))
+    max_quizzes: int = Field(default=MAX_QUIZZES_PER_REQUEST, ge=1, le=2)
+
+    @field_validator("quiz_types")
+    @classmethod
+    def quiz_types_must_be_allowed_and_deduplicated(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        if not value:
+            raise ValueError("quiz_types must not be empty")
+
+        deduplicated: list[str] = []
+        for quiz_type in value:
+            normalized = quiz_type.strip()
+            if normalized not in ALLOWED_QUIZ_TYPES:
+                raise ValueError("unsupported quiz_type")
+            if normalized not in deduplicated:
+                deduplicated.append(normalized)
+
+        return deduplicated
+
+
+class QuizResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    highlight_id: int
+    quiz_type: str
+    question: str
+    answer: str
+    explanation: str
+    source_text: str
     provider: str
     model: str
     created_at: datetime
@@ -182,6 +226,28 @@ def build_glossary_request(db: Session, highlight: Highlight) -> GlossaryExtract
         selected_text=highlight.selected_text,
         surrounding_context=bounded_page_context(page_text),
         document_title=document.title if document is not None else None,
+    )
+
+
+def build_quiz_request(
+    db: Session,
+    highlight: Highlight,
+    options: QuizGenerationOptions,
+) -> QuizGenerationRequest:
+    document = db.get(Document, highlight.document_id)
+    page_text = db.scalar(
+        select(DocumentPage.text).where(
+            DocumentPage.document_id == highlight.document_id,
+            DocumentPage.page_number == highlight.page_number,
+        )
+    )
+
+    return QuizGenerationRequest(
+        selected_text=highlight.selected_text,
+        surrounding_context=bounded_page_context(page_text),
+        document_title=document.title if document is not None else None,
+        quiz_types=options.quiz_types,
+        max_quizzes=options.max_quizzes,
     )
 
 
@@ -475,3 +541,93 @@ def create_highlight_glossary_terms(
         db.refresh(glossary_term)
 
     return glossary_terms
+
+
+@app.post(
+    "/api/v1/highlights/{highlight_id}/quizzes",
+    response_model=list[QuizResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+def create_highlight_quizzes(
+    highlight_id: int,
+    request: QuizGenerationOptions | None = Body(default=None),
+    db: Session = Depends(get_db_session),
+    provider: LLMProvider = Depends(get_llm_provider),
+) -> list[Quiz]:
+    highlight = db.get(Highlight, highlight_id)
+    if highlight is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Highlight not found.",
+        )
+
+    options = request or QuizGenerationOptions()
+    provider_name = getattr(provider, "provider", "unknown")
+    model_name = getattr(provider, "model", "unknown")
+    start_time = perf_counter()
+
+    try:
+        quiz_request = build_quiz_request(db, highlight, options)
+        llm_response = provider.generate_quizzes(quiz_request)
+        if len(llm_response.content.quizzes) > quiz_request.max_quizzes:
+            raise ValueError("Provider returned too many quizzes.")
+    except Exception as exc:
+        db.rollback()
+        db.add(
+            LLMRequestLog(
+                provider=provider_name,
+                model=model_name,
+                task_type="quiz_generation",
+                status="error",
+                latency_ms=now_latency_ms(start_time),
+                prompt_tokens=None,
+                completion_tokens=None,
+                total_tokens=None,
+                estimated_cost=None,
+                document_id=highlight.document_id,
+                highlight_id=highlight.id,
+                error_message=sanitize_provider_error_message(exc),
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Quiz generation failed.",
+        ) from exc
+
+    quizzes = [
+        Quiz(
+            document_id=highlight.document_id,
+            highlight_id=highlight.id,
+            quiz_type=quiz.quiz_type,
+            question=quiz.question,
+            answer=quiz.answer,
+            explanation=quiz.explanation,
+            source_text=quiz.source_text,
+            provider=llm_response.usage.provider,
+            model=llm_response.usage.model,
+        )
+        for quiz in llm_response.content.quizzes
+    ]
+    db.add_all(quizzes)
+    db.add(
+        LLMRequestLog(
+            provider=llm_response.usage.provider,
+            model=llm_response.usage.model,
+            task_type="quiz_generation",
+            status="success",
+            latency_ms=now_latency_ms(start_time),
+            prompt_tokens=llm_response.usage.prompt_tokens,
+            completion_tokens=llm_response.usage.completion_tokens,
+            total_tokens=llm_response.usage.total_tokens,
+            estimated_cost=llm_response.usage.estimated_cost,
+            document_id=highlight.document_id,
+            highlight_id=highlight.id,
+            error_message=None,
+        )
+    )
+    db.commit()
+    for quiz in quizzes:
+        db.refresh(quiz)
+
+    return quizzes
