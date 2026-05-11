@@ -11,6 +11,10 @@ OPENAI_MODEL_ENV_VAR = "INFODRIP_OPENAI_MODEL"
 FAKE_PROVIDER_NAME = "fake"
 OPENAI_COMPATIBLE_PROVIDER_NAME = "openai-compatible"
 MAX_GLOSSARY_TERMS_PER_REQUEST = 10
+SHORT_ANSWER_QUIZ_TYPE = "short_answer"
+FILL_BLANK_QUIZ_TYPE = "fill_blank"
+ALLOWED_QUIZ_TYPES = (SHORT_ANSWER_QUIZ_TYPE, FILL_BLANK_QUIZ_TYPE)
+MAX_QUIZZES_PER_REQUEST = 2
 
 EXPLANATION_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -45,6 +49,39 @@ GLOSSARY_RESPONSE_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["terms"],
+}
+
+QUIZ_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "quizzes": {
+            "type": "array",
+            "maxItems": MAX_QUIZZES_PER_REQUEST,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "quiz_type": {
+                        "type": "string",
+                        "enum": list(ALLOWED_QUIZ_TYPES),
+                    },
+                    "question": {"type": "string"},
+                    "answer": {"type": "string"},
+                    "explanation": {"type": "string"},
+                    "source_text": {"type": "string"},
+                },
+                "required": [
+                    "quiz_type",
+                    "question",
+                    "answer",
+                    "explanation",
+                    "source_text",
+                ],
+            },
+        },
+    },
+    "required": ["quizzes"],
 }
 
 
@@ -125,6 +162,77 @@ class GlossaryExtractionContent(BaseModel):
     )
 
 
+class QuizGenerationRequest(BaseModel):
+    selected_text: str = Field(min_length=1)
+    surrounding_context: str | None = None
+    document_title: str | None = None
+    quiz_types: list[str] = Field(default_factory=lambda: list(ALLOWED_QUIZ_TYPES))
+    max_quizzes: int = Field(default=MAX_QUIZZES_PER_REQUEST, ge=1, le=2)
+
+    @field_validator("selected_text")
+    @classmethod
+    def selected_text_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("selected_text must not be blank")
+        return stripped
+
+    @field_validator("surrounding_context", "document_title")
+    @classmethod
+    def empty_optional_text_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("quiz_types")
+    @classmethod
+    def quiz_types_must_be_allowed_and_deduplicated(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        if not value:
+            raise ValueError("quiz_types must not be empty")
+
+        deduplicated: list[str] = []
+        for quiz_type in value:
+            normalized = quiz_type.strip()
+            if normalized not in ALLOWED_QUIZ_TYPES:
+                raise ValueError("unsupported quiz_type")
+            if normalized not in deduplicated:
+                deduplicated.append(normalized)
+
+        return deduplicated
+
+
+class QuizContent(BaseModel):
+    quiz_type: str
+    question: str
+    answer: str
+    explanation: str
+    source_text: str
+
+    @field_validator("quiz_type")
+    @classmethod
+    def quiz_type_must_be_allowed(cls, value: str) -> str:
+        stripped = value.strip()
+        if stripped not in ALLOWED_QUIZ_TYPES:
+            raise ValueError("unsupported quiz_type")
+        return stripped
+
+    @field_validator("question", "answer", "explanation", "source_text")
+    @classmethod
+    def required_text_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("required text must not be blank")
+        return stripped
+
+
+class QuizGenerationContent(BaseModel):
+    quizzes: list[QuizContent] = Field(max_length=MAX_QUIZZES_PER_REQUEST)
+
+
 class LLMUsageMetadata(BaseModel):
     provider: str
     model: str
@@ -144,6 +252,11 @@ class GlossaryExtractionResponse(BaseModel):
     usage: LLMUsageMetadata
 
 
+class QuizGenerationResponse(BaseModel):
+    content: QuizGenerationContent
+    usage: LLMUsageMetadata
+
+
 class LLMProvider(Protocol):
     def generate_explanation(self, request: ExplanationRequest) -> ExplanationResponse:
         pass
@@ -152,6 +265,12 @@ class LLMProvider(Protocol):
         self,
         request: GlossaryExtractionRequest,
     ) -> GlossaryExtractionResponse:
+        pass
+
+    def generate_quizzes(
+        self,
+        request: QuizGenerationRequest,
+    ) -> QuizGenerationResponse:
         pass
 
 
@@ -221,7 +340,49 @@ class FakeLLMProvider:
             ),
         )
 
-    def _count_prompt_tokens(self, request: ExplanationRequest) -> int:
+    def generate_quizzes(
+        self,
+        request: QuizGenerationRequest,
+    ) -> QuizGenerationResponse:
+        prompt_tokens = self._count_prompt_tokens(request)
+        quiz_types = request.quiz_types[: request.max_quizzes]
+        content = QuizGenerationContent(
+            quizzes=[
+                QuizContent(
+                    quiz_type=quiz_type,
+                    question=f"Fake {quiz_type} question for: {request.selected_text}",
+                    answer=f"Fake answer for: {request.selected_text}",
+                    explanation="This deterministic quiz is generated by the fake provider.",
+                    source_text=request.selected_text,
+                )
+                for quiz_type in quiz_types
+            ]
+        )
+        completion_tokens = sum(
+            self._count_words(quiz.quiz_type)
+            + self._count_words(quiz.question)
+            + self._count_words(quiz.answer)
+            + self._count_words(quiz.explanation)
+            + self._count_words(quiz.source_text)
+            for quiz in content.quizzes
+        )
+
+        return QuizGenerationResponse(
+            content=content,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
+    def _count_prompt_tokens(
+        self,
+        request: ExplanationRequest | GlossaryExtractionRequest | QuizGenerationRequest,
+    ) -> int:
         return sum(
             self._count_words(value)
             for value in (
@@ -321,6 +482,39 @@ class OpenAICompatibleLLMProvider:
             ),
         )
 
+    def generate_quizzes(
+        self,
+        request: QuizGenerationRequest,
+    ) -> QuizGenerationResponse:
+        completion = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._build_quiz_messages(request),
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "infodrip_quiz_generation",
+                    "strict": True,
+                    "schema": QUIZ_RESPONSE_SCHEMA,
+                },
+            },
+            temperature=0,
+        )
+        content = self._first_message_content(completion)
+        quizzes = QuizGenerationContent.model_validate_json(content)
+        prompt_tokens, completion_tokens, total_tokens = self._usage_tokens(completion)
+
+        return QuizGenerationResponse(
+            content=quizzes,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=getattr(completion, "model", self.model) or self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
     def _build_client(self, *, api_key: str, base_url: str | None) -> Any:
         from openai import OpenAI
 
@@ -375,6 +569,41 @@ class OpenAICompatibleLLMProvider:
                 "content": (
                     "You are InfoDrip's glossary extraction task provider. Return "
                     "only JSON with terms. Do not include markdown."
+                ),
+            },
+            {"role": "user", "content": "\n\n".join(user_parts)},
+        ]
+
+    def _build_quiz_messages(
+        self,
+        request: QuizGenerationRequest,
+    ) -> list[dict[str, str]]:
+        user_parts = [
+            "Generate study quizzes from this selected PDF passage.",
+            f"Selected text:\n{request.selected_text}",
+            f"Allowed quiz types:\n{', '.join(request.quiz_types)}",
+            f"Return at most {request.max_quizzes} quizzes.",
+            (
+                "For source_text, return only a short phrase from the selected text "
+                "that supports the quiz. Do not return full page context or long "
+                "surrounding passages."
+            ),
+        ]
+        if request.surrounding_context is not None:
+            user_parts.append(
+                f"Same-page surrounding context:\n{request.surrounding_context}"
+            )
+        if request.document_title is not None:
+            user_parts.append(f"Document title:\n{request.document_title}")
+
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are InfoDrip's quiz generation task provider. Return only "
+                    "JSON with quizzes. Use only the selected text and same-page "
+                    "surrounding context provided in this request. Do not include "
+                    "markdown."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},

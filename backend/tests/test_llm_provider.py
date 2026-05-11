@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.llm import (
+    ALLOWED_QUIZ_TYPES,
     EXPLANATION_RESPONSE_SCHEMA,
     GLOSSARY_RESPONSE_SCHEMA,
     ExplanationRequest,
@@ -15,7 +16,11 @@ from app.llm import (
     LLMProvider,
     LLMProviderConfigError,
     MAX_GLOSSARY_TERMS_PER_REQUEST,
+    MAX_QUIZZES_PER_REQUEST,
     OpenAICompatibleLLMProvider,
+    QUIZ_RESPONSE_SCHEMA,
+    QuizGenerationContent,
+    QuizGenerationRequest,
     build_llm_provider_from_env,
 )
 
@@ -64,6 +69,40 @@ def test_fake_provider_generates_glossary_terms() -> None:
     assert response.usage.completion_tokens == 10
     assert response.usage.total_tokens == 17
     assert response.usage.estimated_cost == Decimal("0.000000")
+
+
+def test_fake_provider_generates_deterministic_quizzes() -> None:
+    provider: LLMProvider = FakeLLMProvider()
+    request = QuizGenerationRequest(
+        selected_text="selected concept",
+        surrounding_context="nearby page context",
+        document_title="Sample Document",
+    )
+
+    first_response = provider.generate_quizzes(request)
+    second_response = provider.generate_quizzes(request)
+
+    assert first_response == second_response
+    assert [quiz.quiz_type for quiz in first_response.content.quizzes] == [
+        "short_answer",
+        "fill_blank",
+    ]
+    assert first_response.content.quizzes[0].question == (
+        "Fake short_answer question for: selected concept"
+    )
+    assert first_response.content.quizzes[0].answer == (
+        "Fake answer for: selected concept"
+    )
+    assert first_response.content.quizzes[0].source_text == "selected concept"
+    assert first_response.usage.provider == "fake"
+    assert first_response.usage.model == "fake-explanation-v1"
+    assert first_response.usage.prompt_tokens == 7
+    assert first_response.usage.completion_tokens > 0
+    assert first_response.usage.total_tokens == (
+        first_response.usage.prompt_tokens
+        + first_response.usage.completion_tokens
+    )
+    assert first_response.usage.estimated_cost == Decimal("0.000000")
 
 
 def test_fake_provider_is_deterministic() -> None:
@@ -166,6 +205,81 @@ def test_glossary_content_rejects_too_many_terms() -> None:
                         "source_text": None,
                     }
                     for index in range(MAX_GLOSSARY_TERMS_PER_REQUEST + 1)
+                ]
+            }
+        )
+
+
+def test_quiz_request_deduplicates_quiz_types_and_validates_bounds() -> None:
+    request = QuizGenerationRequest(
+        selected_text="  selected concept  ",
+        surrounding_context="  ",
+        document_title="  Document  ",
+        quiz_types=["short_answer", "short_answer", "fill_blank"],
+        max_quizzes=1,
+    )
+
+    assert request.selected_text == "selected concept"
+    assert request.surrounding_context is None
+    assert request.document_title == "Document"
+    assert request.quiz_types == ["short_answer", "fill_blank"]
+    assert request.max_quizzes == 1
+
+    with pytest.raises(ValidationError):
+        QuizGenerationRequest(selected_text="concept", quiz_types=[])
+
+    with pytest.raises(ValidationError):
+        QuizGenerationRequest(selected_text="concept", quiz_types=["multiple_choice"])
+
+    with pytest.raises(ValidationError):
+        QuizGenerationRequest(selected_text="concept", max_quizzes=3)
+
+
+def test_quiz_content_validates_required_fields_and_quiz_type() -> None:
+    with pytest.raises(ValidationError):
+        QuizGenerationContent.model_validate(
+            {
+                "quizzes": [
+                    {
+                        "quiz_type": "multiple_choice",
+                        "question": "Question?",
+                        "answer": "Answer.",
+                        "explanation": "Explanation.",
+                        "source_text": "phrase",
+                    }
+                ]
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        QuizGenerationContent.model_validate(
+            {
+                "quizzes": [
+                    {
+                        "quiz_type": "short_answer",
+                        "question": "   ",
+                        "answer": "Answer.",
+                        "explanation": "Explanation.",
+                        "source_text": "phrase",
+                    }
+                ]
+            }
+        )
+
+
+def test_quiz_content_rejects_too_many_quizzes() -> None:
+    with pytest.raises(ValidationError):
+        QuizGenerationContent.model_validate(
+            {
+                "quizzes": [
+                    {
+                        "quiz_type": "short_answer",
+                        "question": f"Question {index}?",
+                        "answer": "Answer.",
+                        "explanation": "Explanation.",
+                        "source_text": "phrase",
+                    }
+                    for index in range(MAX_QUIZZES_PER_REQUEST + 1)
                 ]
             }
         )
@@ -375,6 +489,120 @@ def test_openai_compatible_provider_rejects_too_many_glossary_terms() -> None:
         provider.generate_glossary_terms(
             GlossaryExtractionRequest(selected_text="concept")
         )
+
+
+def test_openai_compatible_provider_generates_normalized_quizzes() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "quizzes": [
+                {
+                    "quiz_type": " short_answer ",
+                    "question": " What is the selected concept? ",
+                    "answer": " It is a sanitized concept. ",
+                    "explanation": " The selected passage states this directly. ",
+                    "source_text": " selected concept ",
+                }
+            ],
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=11,
+            completion_tokens=9,
+            total_tokens=20,
+        ),
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=chat_completions),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        base_url="https://llm.example.test/v1",
+        client=client,
+    )
+
+    response = provider.generate_quizzes(
+        QuizGenerationRequest(
+            selected_text="selected concept",
+            surrounding_context="nearby context",
+            document_title="Sample Document",
+            quiz_types=["short_answer", "fill_blank"],
+            max_quizzes=1,
+        )
+    )
+
+    assert len(response.content.quizzes) == 1
+    quiz = response.content.quizzes[0]
+    assert quiz.quiz_type == "short_answer"
+    assert quiz.question == "What is the selected concept?"
+    assert quiz.answer == "It is a sanitized concept."
+    assert quiz.explanation == "The selected passage states this directly."
+    assert quiz.source_text == "selected concept"
+    assert response.usage.provider == "openai-compatible"
+    assert response.usage.model == "provider-model"
+    assert response.usage.prompt_tokens == 11
+    assert response.usage.completion_tokens == 9
+    assert response.usage.total_tokens == 20
+    assert response.usage.estimated_cost == Decimal("0.000000")
+
+    assert len(chat_completions.calls) == 1
+    call = chat_completions.calls[0]
+    assert call["model"] == "test-model"
+    assert call["temperature"] == 0
+    assert call["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "infodrip_quiz_generation",
+            "strict": True,
+            "schema": QUIZ_RESPONSE_SCHEMA,
+        },
+    }
+    assert QUIZ_RESPONSE_SCHEMA["additionalProperties"] is False
+    schema_quizzes = QUIZ_RESPONSE_SCHEMA["properties"]["quizzes"]
+    assert schema_quizzes["maxItems"] == MAX_QUIZZES_PER_REQUEST
+    schema_quiz = schema_quizzes["items"]
+    assert schema_quiz["additionalProperties"] is False
+    assert schema_quiz["properties"]["quiz_type"]["enum"] == list(ALLOWED_QUIZ_TYPES)
+    assert call["messages"][0]["role"] == "system"
+    assert call["messages"][1]["role"] == "user"
+    assert "Selected text:\nselected concept" in call["messages"][1]["content"]
+    assert "Same-page surrounding context:\nnearby context" in (
+        call["messages"][1]["content"]
+    )
+    assert "Document title:\nSample Document" in call["messages"][1]["content"]
+    assert "Return at most 1 quizzes." in call["messages"][1]["content"]
+    assert "short phrase from the selected text" in call["messages"][1]["content"]
+    assert "test-api-key" not in json.dumps(call)
+
+
+def test_openai_compatible_provider_validates_quiz_response_shape() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "quizzes": [
+                {
+                    "quiz_type": "multiple_choice",
+                    "question": "Question?",
+                    "answer": "Answer.",
+                    "explanation": "Explanation.",
+                    "source_text": "phrase",
+                }
+            ]
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        ),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=chat_completions),
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        provider.generate_quizzes(QuizGenerationRequest(selected_text="concept"))
 
 
 def test_openai_compatible_provider_falls_back_to_summed_total_tokens() -> None:
