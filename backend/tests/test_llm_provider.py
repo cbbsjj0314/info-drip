@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.llm import (
     ALLOWED_QUIZ_TYPES,
+    DEFAULT_QUIZZES_PER_REQUEST,
     EXPLANATION_RESPONSE_SCHEMA,
     GLOSSARY_RESPONSE_SCHEMA,
     ExplanationRequest,
@@ -88,7 +89,7 @@ def test_fake_provider_generates_deterministic_quizzes() -> None:
         "fill_blank",
     ]
     assert first_response.content.quizzes[0].question == (
-        "Fake short_answer question for: selected concept"
+        "Fake short_answer question 1 for: selected concept"
     )
     assert first_response.content.quizzes[0].answer == (
         "Fake answer for: selected concept"
@@ -103,6 +104,28 @@ def test_fake_provider_generates_deterministic_quizzes() -> None:
         + first_response.usage.completion_tokens
     )
     assert first_response.usage.estimated_cost == Decimal("0.000000")
+
+
+def test_fake_provider_generates_requested_count_for_deterministic_tests() -> None:
+    provider: LLMProvider = FakeLLMProvider()
+
+    response = provider.generate_quizzes(
+        QuizGenerationRequest(
+            selected_text="selected concept",
+            quiz_types=["short_answer", "fill_blank"],
+            max_quizzes=6,
+        )
+    )
+
+    assert len(response.content.quizzes) == 6
+    assert [quiz.quiz_type for quiz in response.content.quizzes] == [
+        "short_answer",
+        "fill_blank",
+        "short_answer",
+        "fill_blank",
+        "short_answer",
+        "fill_blank",
+    ]
 
 
 def test_fake_provider_is_deterministic() -> None:
@@ -211,6 +234,11 @@ def test_glossary_content_rejects_too_many_terms() -> None:
 
 
 def test_quiz_request_deduplicates_quiz_types_and_validates_bounds() -> None:
+    default_request = QuizGenerationRequest(selected_text="default concept")
+    max_request = QuizGenerationRequest(
+        selected_text="max concept",
+        max_quizzes=MAX_QUIZZES_PER_REQUEST,
+    )
     request = QuizGenerationRequest(
         selected_text="  selected concept  ",
         surrounding_context="  ",
@@ -219,6 +247,8 @@ def test_quiz_request_deduplicates_quiz_types_and_validates_bounds() -> None:
         max_quizzes=1,
     )
 
+    assert default_request.max_quizzes == DEFAULT_QUIZZES_PER_REQUEST
+    assert max_request.max_quizzes == MAX_QUIZZES_PER_REQUEST
     assert request.selected_text == "selected concept"
     assert request.surrounding_context is None
     assert request.document_title == "Document"
@@ -232,7 +262,10 @@ def test_quiz_request_deduplicates_quiz_types_and_validates_bounds() -> None:
         QuizGenerationRequest(selected_text="concept", quiz_types=["multiple_choice"])
 
     with pytest.raises(ValidationError):
-        QuizGenerationRequest(selected_text="concept", max_quizzes=3)
+        QuizGenerationRequest(
+            selected_text="concept",
+            max_quizzes=MAX_QUIZZES_PER_REQUEST + 1,
+        )
 
 
 def test_quiz_content_validates_required_fields_and_quiz_type() -> None:
@@ -268,6 +301,21 @@ def test_quiz_content_validates_required_fields_and_quiz_type() -> None:
 
 
 def test_quiz_content_rejects_too_many_quizzes() -> None:
+    QuizGenerationContent.model_validate(
+        {
+            "quizzes": [
+                {
+                    "quiz_type": "short_answer",
+                    "question": f"Question {index}?",
+                    "answer": "Answer.",
+                    "explanation": "Explanation.",
+                    "source_text": "phrase",
+                }
+                for index in range(MAX_QUIZZES_PER_REQUEST)
+            ]
+        }
+    )
+
     with pytest.raises(ValidationError):
         QuizGenerationContent.model_validate(
             {
@@ -570,6 +618,10 @@ def test_openai_compatible_provider_generates_normalized_quizzes() -> None:
     )
     assert "Document title:\nSample Document" in call["messages"][1]["content"]
     assert "Return at most 1 quizzes." in call["messages"][1]["content"]
+    assert "return fewer quizzes" in call["messages"][1]["content"]
+    assert "Distribute quiz types as evenly as possible" in (
+        call["messages"][1]["content"]
+    )
     assert "short phrase from the selected text" in call["messages"][1]["content"]
     assert "test-api-key" not in json.dumps(call)
 
