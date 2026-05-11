@@ -45,6 +45,7 @@ def test_document_tables_can_be_created_from_metadata() -> None:
         "llm_explanations",
         "llm_request_logs",
         "quizzes",
+        "quiz_attempts",
     }
 
     document_columns = {column["name"] for column in inspector.get_columns("documents")}
@@ -210,6 +211,30 @@ def test_document_tables_can_be_created_from_metadata() -> None:
             "referred_columns": ["id"],
             "options": {},
         },
+    ]
+
+    quiz_attempt_columns = {
+        column["name"] for column in inspector.get_columns("quiz_attempts")
+    }
+    assert quiz_attempt_columns == {
+        "id",
+        "quiz_id",
+        "user_answer",
+        "is_correct",
+        "feedback",
+        "created_at",
+    }
+
+    quiz_attempt_foreign_keys = inspector.get_foreign_keys("quiz_attempts")
+    assert quiz_attempt_foreign_keys == [
+        {
+            "name": None,
+            "constrained_columns": ["quiz_id"],
+            "referred_schema": None,
+            "referred_table": "quizzes",
+            "referred_columns": ["id"],
+            "options": {},
+        }
     ]
 
     llm_log_columns = {column["name"] for column in inspector.get_columns("llm_request_logs")}
@@ -468,6 +493,71 @@ def test_quiz_relationship_persists_structured_result() -> None:
         assert quiz.highlight is highlight
         assert document.quizzes == [quiz]
         assert highlight.quizzes == [quiz]
+
+
+def test_quiz_attempt_relationship_persists_and_cascades_from_quiz() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    database.Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        document = database.Document(
+            title="Sample",
+            original_filename="sample.pdf",
+            storage_path="documents/sample.pdf",
+            page_count=1,
+            pages=[
+                database.DocumentPage(
+                    page_number=1,
+                    text="Sanitized sample page text.",
+                )
+            ],
+            highlights=[
+                database.Highlight(
+                    page_number=1,
+                    selected_text="Sanitized selected text.",
+                )
+            ],
+        )
+        session.add(document)
+        session.flush()
+
+        highlight = document.highlights[0]
+        quiz = database.Quiz(
+            document=document,
+            highlight=highlight,
+            quiz_type="short_answer",
+            question="Sanitized question?",
+            answer="Sanitized answer.",
+            explanation="Sanitized explanation.",
+            source_text="selected text",
+            provider="fake-provider",
+            model="fake-model",
+            attempts=[
+                database.QuizAttempt(
+                    user_answer="Sanitized user answer.",
+                    is_correct=None,
+                    feedback=None,
+                )
+            ],
+        )
+
+        session.add(quiz)
+        session.commit()
+        session.refresh(quiz)
+
+        attempt = quiz.attempts[0]
+        attempt_id = attempt.id
+        assert attempt_id is not None
+        assert attempt.quiz_id == quiz.id
+        assert attempt.quiz is quiz
+        assert attempt.user_answer == "Sanitized user answer."
+        assert attempt.is_correct is None
+        assert attempt.feedback is None
+
+        session.delete(quiz)
+        session.commit()
+
+        assert session.get(database.QuizAttempt, attempt_id) is None
 
 
 def test_llm_request_log_relationships_persist_success_and_error_logs() -> None:

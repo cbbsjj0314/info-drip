@@ -24,6 +24,7 @@ from app.database import (
     LLMExplanation,
     LLMRequestLog,
     Quiz,
+    QuizAttempt,
     engine,
     get_db_session,
 )
@@ -145,6 +146,41 @@ class QuizResponse(BaseModel):
     source_text: str
     provider: str
     model: str
+    created_at: datetime
+
+
+class QuizAttemptCreateRequest(BaseModel):
+    user_answer: str = Field(min_length=1)
+    is_correct: bool | None = None
+    feedback: str | None = None
+
+    @field_validator("user_answer")
+    @classmethod
+    def user_answer_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("user_answer must not be blank")
+
+        return normalized
+
+    @field_validator("feedback")
+    @classmethod
+    def blank_feedback_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+        return normalized or None
+
+
+class QuizAttemptResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    quiz_id: int
+    user_answer: str
+    is_correct: bool | None
+    feedback: str | None
     created_at: datetime
 
 
@@ -631,3 +667,57 @@ def create_highlight_quizzes(
         db.refresh(quiz)
 
     return quizzes
+
+
+@app.post(
+    "/api/v1/quizzes/{quiz_id}/attempts",
+    response_model=QuizAttemptResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_quiz_attempt(
+    quiz_id: int,
+    request: QuizAttemptCreateRequest,
+    db: Session = Depends(get_db_session),
+) -> QuizAttempt:
+    quiz = db.get(Quiz, quiz_id)
+    if quiz is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found.",
+        )
+
+    attempt = QuizAttempt(
+        quiz_id=quiz_id,
+        user_answer=request.user_answer,
+        is_correct=request.is_correct,
+        feedback=request.feedback,
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    return attempt
+
+
+@app.get(
+    "/api/v1/quizzes/{quiz_id}/attempts",
+    response_model=list[QuizAttemptResponse],
+)
+def list_quiz_attempts(
+    quiz_id: int,
+    db: Session = Depends(get_db_session),
+) -> list[QuizAttempt]:
+    quiz = db.get(Quiz, quiz_id)
+    if quiz is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz not found.",
+        )
+
+    return list(
+        db.scalars(
+            select(QuizAttempt)
+            .where(QuizAttempt.quiz_id == quiz_id)
+            .order_by(QuizAttempt.created_at, QuizAttempt.id)
+        )
+    )

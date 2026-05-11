@@ -158,6 +158,26 @@ class Quiz(Base):
 
     document: Mapped[Document] = relationship(back_populates="quizzes")
     highlight: Mapped[Highlight] = relationship(back_populates="quizzes")
+    attempts: Mapped[list["QuizAttempt"]] = relationship(
+        back_populates="quiz",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), index=True)
+    user_answer: Mapped[str] = mapped_column(Text)
+    is_correct: Mapped[bool | None] = mapped_column(nullable=True)
+    feedback: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    quiz: Mapped[Quiz] = relationship(back_populates="attempts")
 
 
 class LLMRequestLog(Base):
