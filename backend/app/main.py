@@ -26,6 +26,7 @@ from app.database import (
     Quiz,
     QuizAttempt,
     ReviewCard,
+    UserQuestion,
     engine,
     get_db_session,
 )
@@ -36,6 +37,7 @@ from app.llm import (
     GlossaryExtractionRequest,
     LLMProvider,
     MAX_QUIZZES_PER_REQUEST,
+    QuestionAnswerRequest,
     QuizGenerationRequest,
     ReviewCardGenerationRequest,
     build_llm_provider_from_env,
@@ -151,6 +153,32 @@ class QuizResponse(BaseModel):
     answer: str
     explanation: str
     source_text: str
+    provider: str
+    model: str
+    created_at: datetime
+
+
+class QuestionAnswerCreateRequest(BaseModel):
+    question: str = Field(min_length=1)
+
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("question must not be blank")
+        return normalized
+
+
+class UserQuestionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    highlight_id: int
+    question: str
+    answer: str
+    evidence_text: str | None
     provider: str
     model: str
     created_at: datetime
@@ -324,6 +352,27 @@ def build_quiz_request(
         document_title=document.title if document is not None else None,
         quiz_types=options.quiz_types,
         max_quizzes=options.max_quizzes,
+    )
+
+
+def build_question_answer_request(
+    db: Session,
+    highlight: Highlight,
+    question: str,
+) -> QuestionAnswerRequest:
+    document = db.get(Document, highlight.document_id)
+    page_text = db.scalar(
+        select(DocumentPage.text).where(
+            DocumentPage.document_id == highlight.document_id,
+            DocumentPage.page_number == highlight.page_number,
+        )
+    )
+
+    return QuestionAnswerRequest(
+        selected_text=highlight.selected_text,
+        question=question,
+        surrounding_context=bounded_page_context(page_text),
+        document_title=document.title if document is not None else None,
     )
 
 
@@ -750,6 +799,91 @@ def create_highlight_quizzes(
         db.refresh(quiz)
 
     return quizzes
+
+
+@app.post(
+    "/api/v1/highlights/{highlight_id}/questions",
+    response_model=UserQuestionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_highlight_question(
+    highlight_id: int,
+    request: QuestionAnswerCreateRequest,
+    db: Session = Depends(get_db_session),
+    provider: LLMProvider = Depends(get_llm_provider),
+) -> UserQuestion:
+    highlight = db.get(Highlight, highlight_id)
+    if highlight is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Highlight not found.",
+        )
+
+    provider_name = getattr(provider, "provider", "unknown")
+    model_name = getattr(provider, "model", "unknown")
+    start_time = perf_counter()
+
+    try:
+        question_request = build_question_answer_request(
+            db=db,
+            highlight=highlight,
+            question=request.question,
+        )
+        llm_response = provider.answer_question(question_request)
+    except Exception as exc:
+        db.rollback()
+        db.add(
+            LLMRequestLog(
+                provider=provider_name,
+                model=model_name,
+                task_type="question_answering",
+                status="error",
+                latency_ms=now_latency_ms(start_time),
+                prompt_tokens=None,
+                completion_tokens=None,
+                total_tokens=None,
+                estimated_cost=None,
+                document_id=highlight.document_id,
+                highlight_id=highlight.id,
+                error_message=sanitize_provider_error_message(exc),
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Question answering failed.",
+        ) from exc
+
+    user_question = UserQuestion(
+        document_id=highlight.document_id,
+        highlight_id=highlight.id,
+        question=question_request.question,
+        answer=llm_response.content.answer,
+        evidence_text=llm_response.content.evidence_text,
+        provider=llm_response.usage.provider,
+        model=llm_response.usage.model,
+    )
+    db.add(user_question)
+    db.add(
+        LLMRequestLog(
+            provider=llm_response.usage.provider,
+            model=llm_response.usage.model,
+            task_type="question_answering",
+            status="success",
+            latency_ms=now_latency_ms(start_time),
+            prompt_tokens=llm_response.usage.prompt_tokens,
+            completion_tokens=llm_response.usage.completion_tokens,
+            total_tokens=llm_response.usage.total_tokens,
+            estimated_cost=llm_response.usage.estimated_cost,
+            document_id=highlight.document_id,
+            highlight_id=highlight.id,
+            error_message=None,
+        )
+    )
+    db.commit()
+    db.refresh(user_question)
+
+    return user_question
 
 
 @app.post(

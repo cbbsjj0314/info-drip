@@ -51,6 +51,10 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    user_questions: Mapped[list["UserQuestion"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
     llm_request_logs: Mapped[list["LLMRequestLog"]] = relationship(
         back_populates="document",
     )
@@ -92,6 +96,9 @@ class Highlight(Base):
         back_populates="highlight",
     )
     quizzes: Mapped[list["Quiz"]] = relationship(
+        back_populates="highlight",
+    )
+    user_questions: Mapped[list["UserQuestion"]] = relationship(
         back_populates="highlight",
     )
     llm_request_logs: Mapped[list["LLMRequestLog"]] = relationship(
@@ -162,6 +169,26 @@ class Quiz(Base):
         back_populates="quiz",
         cascade="all, delete-orphan",
     )
+
+
+class UserQuestion(Base):
+    __tablename__ = "user_questions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    highlight_id: Mapped[int] = mapped_column(ForeignKey("highlights.id"), index=True)
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    evidence_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str]
+    model: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    document: Mapped[Document] = relationship(back_populates="user_questions")
+    highlight: Mapped[Highlight] = relationship(back_populates="user_questions")
 
 
 class QuizAttempt(Base):
