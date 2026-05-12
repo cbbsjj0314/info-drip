@@ -70,6 +70,9 @@ struct ContentView: View {
                 onLoadReviewAgainAttempts: { documentID in
                     try await pdfStore.listReviewAgainQuizAttempts(documentID: documentID)
                 },
+                onLoadStudyRecord: { documentID in
+                    try await pdfStore.loadDocumentStudyRecord(documentID: documentID)
+                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
                     pdfStore.clearExplanationState()
