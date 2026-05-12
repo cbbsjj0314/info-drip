@@ -22,6 +22,9 @@ from app.llm import (
     QUIZ_RESPONSE_SCHEMA,
     QuizGenerationContent,
     QuizGenerationRequest,
+    REVIEW_CARD_RESPONSE_SCHEMA,
+    ReviewCardContent,
+    ReviewCardGenerationRequest,
     build_llm_provider_from_env,
 )
 
@@ -126,6 +129,40 @@ def test_fake_provider_generates_requested_count_for_deterministic_tests() -> No
         "short_answer",
         "fill_blank",
     ]
+
+
+def test_fake_provider_generates_deterministic_review_card() -> None:
+    provider: LLMProvider = FakeLLMProvider()
+    request = ReviewCardGenerationRequest(
+        document_title="Sample Document",
+        page_number=2,
+        quiz_type="short_answer",
+        question="What is selected?",
+        correct_answer="The selected concept.",
+        user_answer="Wrong answer.",
+        quiz_explanation="The selected passage states the concept.",
+        quiz_source_text="selected concept",
+    )
+
+    first_response = provider.generate_review_card(request)
+    second_response = provider.generate_review_card(request)
+
+    assert first_response == second_response
+    assert first_response.content.front == (
+        "Review this short_answer question: What is selected?"
+    )
+    assert first_response.content.back == (
+        "Correct answer: The selected concept.\n"
+        "Explanation: The selected passage states the concept."
+    )
+    assert first_response.content.source_text == "selected concept"
+    assert first_response.usage.provider == "fake"
+    assert first_response.usage.model == "fake-explanation-v1"
+    assert first_response.usage.prompt_tokens > 0
+    assert first_response.usage.total_tokens == (
+        first_response.usage.prompt_tokens
+        + first_response.usage.completion_tokens
+    )
 
 
 def test_fake_provider_is_deterministic() -> None:
@@ -331,6 +368,103 @@ def test_quiz_content_rejects_too_many_quizzes() -> None:
                 ]
             }
         )
+
+
+def test_review_card_request_validates_context_fields() -> None:
+    request = ReviewCardGenerationRequest(
+        document_title="  Document  ",
+        page_number=1,
+        quiz_type=" short_answer ",
+        question="  Question?  ",
+        correct_answer="  Answer.  ",
+        user_answer="  User answer.  ",
+        quiz_explanation="  Explanation.  ",
+        quiz_source_text="  source phrase  ",
+    )
+
+    assert request.document_title == "Document"
+    assert request.quiz_type == "short_answer"
+    assert request.question == "Question?"
+    assert request.correct_answer == "Answer."
+    assert request.user_answer == "User answer."
+    assert request.quiz_explanation == "Explanation."
+    assert request.quiz_source_text == "source phrase"
+
+    blank_title_request = ReviewCardGenerationRequest(
+        document_title="  ",
+        page_number=1,
+        quiz_type="fill_blank",
+        question="Question?",
+        correct_answer="Answer.",
+        user_answer="User answer.",
+        quiz_explanation="Explanation.",
+        quiz_source_text="source phrase",
+    )
+    assert blank_title_request.document_title is None
+
+    with pytest.raises(ValidationError):
+        ReviewCardGenerationRequest(
+            page_number=0,
+            quiz_type="short_answer",
+            question="Question?",
+            correct_answer="Answer.",
+            user_answer="User answer.",
+            quiz_explanation="Explanation.",
+            quiz_source_text="source phrase",
+        )
+
+    with pytest.raises(ValidationError):
+        ReviewCardGenerationRequest(
+            page_number=1,
+            quiz_type="multiple_choice",
+            question="Question?",
+            correct_answer="Answer.",
+            user_answer="User answer.",
+            quiz_explanation="Explanation.",
+            quiz_source_text="source phrase",
+        )
+
+    with pytest.raises(ValidationError):
+        ReviewCardGenerationRequest(
+            page_number=1,
+            quiz_type="short_answer",
+            question="   ",
+            correct_answer="Answer.",
+            user_answer="User answer.",
+            quiz_explanation="Explanation.",
+            quiz_source_text="source phrase",
+        )
+
+
+def test_review_card_content_validates_required_fields_and_normalizes_source() -> None:
+    content = ReviewCardContent(
+        front="  Front?  ",
+        back="  Back.  ",
+        source_text="   ",
+    )
+
+    assert content.front == "Front?"
+    assert content.back == "Back."
+    assert content.source_text is None
+
+    with pytest.raises(ValidationError):
+        ReviewCardContent(front="   ", back="Back.")
+
+    with pytest.raises(ValidationError):
+        ReviewCardContent(front="Front?", back="   ")
+
+
+def test_review_card_response_schema_is_strict_and_nullable_source_text() -> None:
+    assert REVIEW_CARD_RESPONSE_SCHEMA == {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "front": {"type": "string"},
+            "back": {"type": "string"},
+            "source_text": {"type": ["string", "null"]},
+        },
+        "required": ["front", "back", "source_text"],
+    }
 
 
 def test_openai_compatible_provider_generates_normalized_explanation() -> None:
@@ -655,6 +789,117 @@ def test_openai_compatible_provider_validates_quiz_response_shape() -> None:
 
     with pytest.raises(ValidationError):
         provider.generate_quizzes(QuizGenerationRequest(selected_text="concept"))
+
+
+def test_openai_compatible_provider_generates_normalized_review_card() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "front": " What should you remember? ",
+            "back": " Correct answer: selected concept. Explanation: it is stated. ",
+            "source_text": " selected concept ",
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=13,
+            completion_tokens=8,
+            total_tokens=21,
+        ),
+    )
+    client = SimpleNamespace(
+        chat=SimpleNamespace(completions=chat_completions),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        base_url="https://llm.example.test/v1",
+        client=client,
+    )
+
+    response = provider.generate_review_card(
+        ReviewCardGenerationRequest(
+            document_title="Sample Document",
+            page_number=3,
+            quiz_type="short_answer",
+            question="What is selected?",
+            correct_answer="selected concept",
+            user_answer="wrong answer",
+            quiz_explanation="The passage states it.",
+            quiz_source_text="selected concept",
+        )
+    )
+
+    assert response.content.front == "What should you remember?"
+    assert response.content.back == (
+        "Correct answer: selected concept. Explanation: it is stated."
+    )
+    assert response.content.source_text == "selected concept"
+    assert response.usage.provider == "openai-compatible"
+    assert response.usage.model == "provider-model"
+    assert response.usage.prompt_tokens == 13
+    assert response.usage.completion_tokens == 8
+    assert response.usage.total_tokens == 21
+    assert response.usage.estimated_cost == Decimal("0.000000")
+
+    assert len(chat_completions.calls) == 1
+    call = chat_completions.calls[0]
+    assert call["model"] == "test-model"
+    assert call["temperature"] == 0
+    assert call["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "infodrip_review_card_generation",
+            "strict": True,
+            "schema": REVIEW_CARD_RESPONSE_SCHEMA,
+        },
+    }
+    assert REVIEW_CARD_RESPONSE_SCHEMA["additionalProperties"] is False
+    assert call["messages"][0]["role"] == "system"
+    assert call["messages"][1]["role"] == "user"
+    user_content = call["messages"][1]["content"]
+    assert "Document title:\nSample Document" in user_content
+    assert "Page number:\n3" in user_content
+    assert "Quiz type:\nshort_answer" in user_content
+    assert "Question:\nWhat is selected?" in user_content
+    assert "User answer:\nwrong answer" in user_content
+    assert "Correct answer:\nselected concept" in user_content
+    assert "Quiz explanation:\nThe passage states it." in user_content
+    assert "Quiz source text:\nselected concept" in user_content
+    assert "self-contained review prompt" in user_content
+    assert "test-api-key" not in json.dumps(call)
+
+
+def test_openai_compatible_provider_validates_review_card_response_shape() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "front": "   ",
+            "back": "Back.",
+            "source_text": None,
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        ),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=chat_completions),
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        provider.generate_review_card(
+            ReviewCardGenerationRequest(
+                page_number=1,
+                quiz_type="short_answer",
+                question="Question?",
+                correct_answer="Answer.",
+                user_answer="User answer.",
+                quiz_explanation="Explanation.",
+                quiz_source_text="source phrase",
+            )
+        )
 
 
 def test_openai_compatible_provider_falls_back_to_summed_total_tokens() -> None:
