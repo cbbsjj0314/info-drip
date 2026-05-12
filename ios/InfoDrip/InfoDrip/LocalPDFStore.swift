@@ -177,6 +177,32 @@ struct BackendReviewAgainQuizAttempt: Equatable, Decodable {
     }
 }
 
+struct BackendReviewCard: Equatable, Decodable {
+    let id: Int
+    let documentID: Int
+    let quizID: Int
+    let quizAttemptID: Int
+    let front: String
+    let back: String
+    let sourceText: String?
+    let provider: String
+    let model: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case documentID = "document_id"
+        case quizID = "quiz_id"
+        case quizAttemptID = "quiz_attempt_id"
+        case front
+        case back
+        case sourceText = "source_text"
+        case provider
+        case model
+        case createdAt = "created_at"
+    }
+}
+
 enum PDFUploadState: Equatable {
     case idle
     case uploading
@@ -421,6 +447,28 @@ struct BackendAPIClient {
         }
 
         return try JSONDecoder().decode([BackendReviewAgainQuizAttempt].self, from: data)
+    }
+
+    func createReviewCard(attemptID: Int) async throws -> BackendReviewCard {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/quiz-attempts")
+            .appendingPathComponent(String(attemptID))
+            .appendingPathComponent("review-cards")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 201 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode(BackendReviewCard.self, from: data)
     }
 
     private func multipartBody(fileURL: URL, fieldName: String, boundary: String) throws -> Data {
@@ -681,6 +729,10 @@ final class LocalPDFStore: ObservableObject {
 
     func listReviewAgainQuizAttempts(documentID: Int? = nil) async throws -> [BackendReviewAgainQuizAttempt] {
         try await apiClient.listReviewAgainQuizAttempts(documentID: documentID)
+    }
+
+    func createReviewCard(attemptID: Int) async throws -> BackendReviewCard {
+        try await apiClient.createReviewCard(attemptID: attemptID)
     }
 
     private func upload(documentID: UUID, fileURL: URL) async {
