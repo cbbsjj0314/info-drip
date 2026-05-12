@@ -225,6 +225,485 @@ struct QuestionDetailSheet: View {
     }
 }
 
+struct DocumentStudyRecordSheet: View {
+    let documentID: Int
+    let documentTitle: String
+    let onLoad: (Int) async throws -> BackendDocumentStudyRecord
+    @Environment(\.dismiss) private var dismiss
+    @State private var state: StudyRecordLoadState = .idle
+
+    var body: some View {
+        NavigationStack {
+            content
+                .background(Color(.systemGroupedBackground))
+                .navigationTitle("학습 기록")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("닫기") {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+        .task {
+            guard case .idle = state else {
+                return
+            }
+
+            await load()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .idle, .loading:
+            loadingState
+        case .loaded(let record):
+            loadedState(record)
+        case .failed(let message):
+            failedState(message: message)
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("학습 기록을 불러오는 중입니다.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func failedState(message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.orange)
+            Text("학습 기록을 불러오지 못했습니다.")
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
+            Button {
+                Task {
+                    await load()
+                }
+            } label: {
+                Label("다시 시도", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private func loadedState(_ record: BackendDocumentStudyRecord) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                documentHeader(record.document)
+                countSummary(record)
+
+                if isEmpty(record) {
+                    emptyState
+                } else {
+                    studyRecordSections(record)
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    private func documentHeader(_ document: BackendDocument) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(document.title)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("\(document.pageCount) pages · #\(document.id)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(document.originalFilename)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func countSummary(_ record: BackendDocumentStudyRecord) -> some View {
+        let metrics = [
+            ("하이라이트", record.highlights.count),
+            ("설명", record.explanations.count),
+            ("용어", record.glossaryTerms.count),
+            ("질문", record.userQuestions.count),
+            ("퀴즈", record.quizzes.count),
+            ("풀이", record.quizAttempts.count),
+        ]
+
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], spacing: 10) {
+            ForEach(metrics, id: \.0) { metric in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(metric.0)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("\(metric.1)")
+                        .font(.title3.weight(.semibold))
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "tray")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("아직 저장된 학습 기록이 없습니다.")
+                .font(.headline)
+            Text("문장을 선택해 하이라이트, 설명, 용어, 질문, 퀴즈를 저장하면 여기에 표시됩니다.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+    }
+
+    @ViewBuilder
+    private func studyRecordSections(_ record: BackendDocumentStudyRecord) -> some View {
+        if !record.highlights.isEmpty {
+            StudyRecordSection(title: "하이라이트", count: record.highlights.count) {
+                ForEach(record.highlights, id: \.id) { highlight in
+                    StudyRecordHighlightCard(highlight: highlight)
+                }
+            }
+        }
+
+        if !record.explanations.isEmpty {
+            StudyRecordSection(title: "설명", count: record.explanations.count) {
+                ForEach(record.explanations, id: \.id) { explanation in
+                    StudyRecordExplanationCard(explanation: explanation)
+                }
+            }
+        }
+
+        if !record.glossaryTerms.isEmpty {
+            StudyRecordSection(title: "용어", count: record.glossaryTerms.count) {
+                ForEach(record.glossaryTerms, id: \.id) { glossaryTerm in
+                    StudyRecordGlossaryTermCard(glossaryTerm: glossaryTerm)
+                }
+            }
+        }
+
+        if !record.userQuestions.isEmpty {
+            StudyRecordSection(title: "질문", count: record.userQuestions.count) {
+                ForEach(record.userQuestions, id: \.id) { userQuestion in
+                    StudyRecordUserQuestionCard(userQuestion: userQuestion)
+                }
+            }
+        }
+
+        if !record.quizzes.isEmpty {
+            StudyRecordSection(title: "퀴즈", count: record.quizzes.count) {
+                ForEach(record.quizzes, id: \.id) { quiz in
+                    StudyRecordQuizCard(quiz: quiz)
+                }
+            }
+        }
+
+        if !record.quizAttempts.isEmpty {
+            StudyRecordSection(title: "풀이 기록", count: record.quizAttempts.count) {
+                ForEach(record.quizAttempts, id: \.id) { attempt in
+                    StudyRecordQuizAttemptCard(attempt: attempt)
+                }
+            }
+        }
+    }
+
+    private func isEmpty(_ record: BackendDocumentStudyRecord) -> Bool {
+        record.highlights.isEmpty
+            && record.explanations.isEmpty
+            && record.glossaryTerms.isEmpty
+            && record.userQuestions.isEmpty
+            && record.quizzes.isEmpty
+            && record.quizAttempts.isEmpty
+    }
+
+    private func load() async {
+        state = .loading
+
+        do {
+            let record = try await onLoad(documentID)
+            state = .loaded(record)
+        } catch {
+            state = .failed(error.localizedDescription)
+        }
+    }
+}
+
+private enum StudyRecordLoadState: Equatable {
+    case idle
+    case loading
+    case loaded(BackendDocumentStudyRecord)
+    case failed(String)
+}
+
+private struct StudyRecordSection<Content: View>: View {
+    let title: String
+    let count: Int
+    let content: Content
+
+    init(title: String, count: Int, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.count = count
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.headline)
+                Text("\(count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVStack(alignment: .leading, spacing: 10) {
+                content
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct StudyRecordHighlightCard: View {
+    let highlight: BackendHighlight
+
+    var body: some View {
+        StudyRecordCard {
+            metadataRow(left: "p. \(highlight.pageNumber)", right: highlight.createdAt)
+            Text(highlight.selectedText)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct StudyRecordExplanationCard: View {
+    let explanation: BackendStudyRecordExplanation
+
+    var body: some View {
+        StudyRecordCard {
+            metadataRow(left: "#\(explanation.id) · highlight #\(explanation.highlightID)", right: explanation.createdAt)
+
+            Text(explanation.summary)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+
+            let keyPoints = explanation.keyPoints
+                .map(trimmed)
+                .filter { !$0.isEmpty }
+            if !keyPoints.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("핵심 포인트")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(keyPoints.prefix(3), id: \.self) { point in
+                        Text("• \(point)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            Text("\(explanation.provider) · \(explanation.model)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct StudyRecordGlossaryTermCard: View {
+    let glossaryTerm: BackendGlossaryTerm
+
+    var body: some View {
+        StudyRecordCard {
+            metadataRow(left: glossaryTerm.term, right: glossaryTerm.createdAt)
+            bodySection(title: "정의", text: glossaryTerm.definition)
+
+            if let sourceText = nonBlank(glossaryTerm.sourceText) {
+                bodySection(title: "근거", text: sourceText, lineLimit: 4)
+            }
+
+            Text("\(glossaryTerm.provider) · \(glossaryTerm.model)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct StudyRecordUserQuestionCard: View {
+    let userQuestion: BackendUserQuestion
+
+    var body: some View {
+        StudyRecordCard {
+            metadataRow(left: "#\(userQuestion.id) · highlight #\(userQuestion.highlightID)", right: userQuestion.createdAt)
+            bodySection(title: "질문", text: userQuestion.question)
+            bodySection(title: "답변", text: userQuestion.answer, lineLimit: 4)
+
+            if let evidenceText = nonBlank(userQuestion.evidenceText) {
+                bodySection(title: "근거", text: evidenceText, lineLimit: 4)
+            }
+
+            Text("\(userQuestion.provider) · \(userQuestion.model)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct StudyRecordQuizCard: View {
+    let quiz: BackendQuiz
+
+    var body: some View {
+        StudyRecordCard {
+            metadataRow(left: displayTitle(for: quiz.quizType), right: quiz.createdAt)
+            bodySection(title: "문제", text: quiz.question)
+            bodySection(title: "정답", text: quiz.answer, lineLimit: 3)
+            Text("\(quiz.provider) · \(quiz.model)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func displayTitle(for quizType: String) -> String {
+        switch quizType {
+        case "short_answer":
+            return "단답형"
+        case "fill_blank":
+            return "빈칸"
+        default:
+            return quizType
+        }
+    }
+}
+
+private struct StudyRecordQuizAttemptCard: View {
+    let attempt: BackendQuizAttempt
+
+    var body: some View {
+        StudyRecordCard {
+            metadataRow(left: "quiz #\(attempt.quizID)", right: attempt.createdAt)
+            bodySection(title: "내 답안", text: attempt.userAnswer)
+            Text(correctnessText)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(correctnessColor)
+
+            if let feedback = nonBlank(attempt.feedback) {
+                bodySection(title: "피드백", text: feedback, lineLimit: 4)
+            }
+        }
+    }
+
+    private var correctnessText: String {
+        switch attempt.isCorrect {
+        case .some(true):
+            return "맞음"
+        case .some(false):
+            return "다시 보기"
+        case .none:
+            return "자가 채점 없음"
+        }
+    }
+
+    private var correctnessColor: Color {
+        switch attempt.isCorrect {
+        case .some(true):
+            return .green
+        case .some(false):
+            return .orange
+        case .none:
+            return .secondary
+        }
+    }
+}
+
+private struct StudyRecordCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(.separator), lineWidth: 0.5)
+        }
+    }
+}
+
+private func metadataRow(left: String, right: String) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(left)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+        Spacer(minLength: 8)
+
+        Text(right)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+    }
+}
+
+private func bodySection(title: String, text: String, lineLimit: Int? = nil) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+        Text(text)
+            .font(.subheadline)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private func nonBlank(_ text: String?) -> String? {
+    guard let text else {
+        return nil
+    }
+
+    let normalizedText = trimmed(text)
+    return normalizedText.isEmpty ? nil : normalizedText
+}
+
+private func trimmed(_ text: String) -> String {
+    text.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 struct QuizStudySheet: View {
     let quizzes: [BackendQuiz]
     let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt

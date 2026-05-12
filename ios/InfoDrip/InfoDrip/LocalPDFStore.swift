@@ -71,6 +71,28 @@ struct BackendExplanation: Equatable, Decodable {
     }
 }
 
+struct BackendStudyRecordExplanation: Equatable, Decodable {
+    let id: Int
+    let documentID: Int
+    let highlightID: Int
+    let summary: String
+    let keyPoints: [String]
+    let provider: String
+    let model: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case documentID = "document_id"
+        case highlightID = "highlight_id"
+        case summary
+        case keyPoints = "key_points"
+        case provider
+        case model
+        case createdAt = "created_at"
+    }
+}
+
 struct BackendGlossaryTerm: Equatable, Decodable {
     let id: Int
     let documentID: Int
@@ -224,6 +246,26 @@ struct BackendReviewCard: Equatable, Decodable {
         case provider
         case model
         case createdAt = "created_at"
+    }
+}
+
+struct BackendDocumentStudyRecord: Equatable, Decodable {
+    let document: BackendDocument
+    let highlights: [BackendHighlight]
+    let explanations: [BackendStudyRecordExplanation]
+    let glossaryTerms: [BackendGlossaryTerm]
+    let userQuestions: [BackendUserQuestion]
+    let quizzes: [BackendQuiz]
+    let quizAttempts: [BackendQuizAttempt]
+
+    enum CodingKeys: String, CodingKey {
+        case document
+        case highlights
+        case explanations
+        case glossaryTerms = "glossary_terms"
+        case userQuestions = "user_questions"
+        case quizzes
+        case quizAttempts = "quiz_attempts"
     }
 }
 
@@ -509,6 +551,28 @@ struct BackendAPIClient {
         }
 
         return try JSONDecoder().decode([BackendReviewAgainQuizAttempt].self, from: data)
+    }
+
+    func loadDocumentStudyRecord(documentID: Int) async throws -> BackendDocumentStudyRecord {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/documents")
+            .appendingPathComponent(String(documentID))
+            .appendingPathComponent("study-records")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode(BackendDocumentStudyRecord.self, from: data)
     }
 
     func createReviewCard(attemptID: Int) async throws -> BackendReviewCard {
@@ -836,6 +900,10 @@ final class LocalPDFStore: ObservableObject {
 
     func listReviewAgainQuizAttempts(documentID: Int? = nil) async throws -> [BackendReviewAgainQuizAttempt] {
         try await apiClient.listReviewAgainQuizAttempts(documentID: documentID)
+    }
+
+    func loadDocumentStudyRecord(documentID: Int) async throws -> BackendDocumentStudyRecord {
+        try await apiClient.loadDocumentStudyRecord(documentID: documentID)
     }
 
     func createReviewCard(attemptID: Int) async throws -> BackendReviewCard {
