@@ -111,6 +111,7 @@ INFODRIP_LLM_PROVIDER=fake
 INFODRIP_OPENAI_API_KEY=
 INFODRIP_OPENAI_BASE_URL=
 INFODRIP_OPENAI_MODEL=
+INFODRIP_OPENAI_RESPONSE_FORMAT=json_schema
 ```
 
 - `INFODRIP_DATABASE_URL`
@@ -130,6 +131,11 @@ INFODRIP_OPENAI_MODEL=
   - 별도 endpoint를 쓰지 않으면 비워 둔다.
 - `INFODRIP_OPENAI_MODEL`
   - `INFODRIP_LLM_PROVIDER=openai-compatible`일 때만 필요
+- `INFODRIP_OPENAI_RESPONSE_FORMAT`
+  - 기본값: `json_schema`
+  - 지원 값: `json_schema`, `json_object`
+  - strict JSON schema를 지원하지 않고 JSON object mode를 요구하는 OpenAI-compatible provider에서는 `json_object`를 사용할 수 있다.
+  - `json_object` mode에서도 backend는 LLM output을 저장하기 전에 Pydantic schema로 검증한다.
 
 API key, provider account detail, token, private runtime value는 iPad app, 공개 문서, fixture, screenshot, API payload example에 저장하지 않는다.
 
@@ -172,6 +178,7 @@ Docs-only 변경에서는 runtime validation을 생략할 수 있다.
    INFODRIP_OPENAI_API_KEY=<set in local env only>
    INFODRIP_OPENAI_MODEL=<model name>
    INFODRIP_OPENAI_BASE_URL=<optional custom base URL>
+   INFODRIP_OPENAI_RESPONSE_FORMAT=json_schema
    ```
 
 3. Backend를 실행한다.
