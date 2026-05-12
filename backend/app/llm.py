@@ -96,6 +96,23 @@ REVIEW_CARD_RESPONSE_SCHEMA: dict[str, Any] = {
     "required": ["front", "back", "source_text"],
 }
 
+QUESTION_ANSWER_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "answer": {"type": "string"},
+        "evidence_text": {"type": ["string", "null"]},
+        "document_based": {"type": "boolean"},
+        "needs_more_context": {"type": "boolean"},
+    },
+    "required": [
+        "answer",
+        "evidence_text",
+        "document_based",
+        "needs_more_context",
+    ],
+}
+
 
 class ExplanationRequest(BaseModel):
     selected_text: str = Field(min_length=1)
@@ -312,6 +329,52 @@ class ReviewCardContent(BaseModel):
         return stripped or None
 
 
+class QuestionAnswerRequest(BaseModel):
+    selected_text: str = Field(min_length=1)
+    question: str = Field(min_length=1)
+    surrounding_context: str | None = None
+    document_title: str | None = None
+
+    @field_validator("selected_text", "question")
+    @classmethod
+    def required_text_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("required text must not be blank")
+        return stripped
+
+    @field_validator("surrounding_context", "document_title")
+    @classmethod
+    def empty_optional_text_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class QuestionAnswerContent(BaseModel):
+    answer: str
+    evidence_text: str | None = None
+    document_based: bool
+    needs_more_context: bool
+
+    @field_validator("answer")
+    @classmethod
+    def answer_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("answer must not be blank")
+        return stripped
+
+    @field_validator("evidence_text")
+    @classmethod
+    def empty_evidence_text_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
 class LLMUsageMetadata(BaseModel):
     provider: str
     model: str
@@ -341,6 +404,11 @@ class ReviewCardGenerationResponse(BaseModel):
     usage: LLMUsageMetadata
 
 
+class QuestionAnswerResponse(BaseModel):
+    content: QuestionAnswerContent
+    usage: LLMUsageMetadata
+
+
 class LLMProvider(Protocol):
     def generate_explanation(self, request: ExplanationRequest) -> ExplanationResponse:
         pass
@@ -361,6 +429,12 @@ class LLMProvider(Protocol):
         self,
         request: ReviewCardGenerationRequest,
     ) -> ReviewCardGenerationResponse:
+        pass
+
+    def answer_question(
+        self,
+        request: QuestionAnswerRequest,
+    ) -> QuestionAnswerResponse:
         pass
 
 
@@ -503,6 +577,35 @@ class FakeLLMProvider:
             ),
         )
 
+    def answer_question(
+        self,
+        request: QuestionAnswerRequest,
+    ) -> QuestionAnswerResponse:
+        prompt_tokens = self._count_prompt_tokens(request)
+        content = QuestionAnswerContent(
+            answer=f"Fake answer to '{request.question}' for: {request.selected_text}",
+            evidence_text=request.selected_text,
+            document_based=True,
+            needs_more_context=False,
+        )
+        completion_tokens = (
+            self._count_words(content.answer)
+            + self._count_words(content.evidence_text or "")
+            + 2
+        )
+
+        return QuestionAnswerResponse(
+            content=content,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
     def _count_prompt_tokens(
         self,
         request: (
@@ -510,6 +613,7 @@ class FakeLLMProvider:
             | GlossaryExtractionRequest
             | QuizGenerationRequest
             | ReviewCardGenerationRequest
+            | QuestionAnswerRequest
         ),
     ) -> int:
         if isinstance(request, ReviewCardGenerationRequest):
@@ -526,6 +630,7 @@ class FakeLLMProvider:
         else:
             values = (
                 request.selected_text,
+                getattr(request, "question", None),
                 request.surrounding_context,
                 request.document_title,
             )
@@ -691,6 +796,39 @@ class OpenAICompatibleLLMProvider:
             ),
         )
 
+    def answer_question(
+        self,
+        request: QuestionAnswerRequest,
+    ) -> QuestionAnswerResponse:
+        completion = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._build_question_answer_messages(request),
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "infodrip_question_answer",
+                    "strict": True,
+                    "schema": QUESTION_ANSWER_RESPONSE_SCHEMA,
+                },
+            },
+            temperature=0,
+        )
+        content = self._first_message_content(completion)
+        answer = QuestionAnswerContent.model_validate_json(content)
+        prompt_tokens, completion_tokens, total_tokens = self._usage_tokens(completion)
+
+        return QuestionAnswerResponse(
+            content=answer,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=getattr(completion, "model", self.model) or self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
     def _build_client(self, *, api_key: str, base_url: str | None) -> Any:
         from openai import OpenAI
 
@@ -822,6 +960,47 @@ class OpenAICompatibleLLMProvider:
                     "You are InfoDrip's review card generation task provider. "
                     "Return only JSON with front, back, and source_text. Do not "
                     "include markdown."
+                ),
+            },
+            {"role": "user", "content": "\n\n".join(user_parts)},
+        ]
+
+    def _build_question_answer_messages(
+        self,
+        request: QuestionAnswerRequest,
+    ) -> list[dict[str, str]]:
+        user_parts = [
+            "Answer the user's question about this selected PDF passage.",
+            f"Selected text:\n{request.selected_text}",
+            f"User question:\n{request.question}",
+            (
+                "Use the selected text and same-page context as the document "
+                "evidence. If the document evidence is insufficient, say so in "
+                "the answer, set needs_more_context to true, and do not make a "
+                "definitive document claim."
+            ),
+            (
+                "For evidence_text, return only a short supporting phrase from "
+                "the selected text or same-page context. Do not return full page "
+                "context or long surrounding passages."
+            ),
+        ]
+        if request.surrounding_context is not None:
+            user_parts.append(
+                f"Same-page surrounding context:\n{request.surrounding_context}"
+            )
+        if request.document_title is not None:
+            user_parts.append(f"Document title:\n{request.document_title}")
+
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are InfoDrip's question answering task provider. Return "
+                    "only JSON with answer, evidence_text, document_based, and "
+                    "needs_more_context. Do not include markdown. Keep document "
+                    "claims grounded in the provided selected text and same-page "
+                    "context."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
