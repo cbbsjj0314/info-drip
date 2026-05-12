@@ -157,6 +157,74 @@ struct GlossaryDetailSheet: View {
     }
 }
 
+struct QuestionDetailSheet: View {
+    let userQuestion: BackendUserQuestion
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("질문")
+                            .font(.headline)
+                        Text(userQuestion.question)
+                            .font(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("답변")
+                            .font(.headline)
+                        Text(userQuestion.answer)
+                            .font(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let evidenceText = trimmedEvidenceText {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("근거")
+                                .font(.headline)
+                            Text(evidenceText)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(userQuestion.provider) · \(userQuestion.model)")
+                        Text(userQuestion.createdAt)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("질문")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("닫기") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var trimmedEvidenceText: String? {
+        guard let evidenceText = userQuestion.evidenceText else {
+            return nil
+        }
+
+        let normalizedEvidenceText = evidenceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedEvidenceText.isEmpty ? nil : normalizedEvidenceText
+    }
+}
+
 struct QuizStudySheet: View {
     let quizzes: [BackendQuiz]
     let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt

@@ -10,13 +10,18 @@ struct QuickActionPanel: View {
     let explanationState: ExplanationState
     let glossaryState: GlossaryState
     let quizState: QuizState
+    let questionState: QuestionState
     let highlightAvailabilityMessage: String?
     let canRunQuickAction: Bool
     let onSelect: (QuickAction) -> Void
+    let onQuestion: (String) -> Void
     let onStudyQuiz: (Int) -> Void
     let onOpenExplanationDetail: (BackendExplanation) -> Void
     let onOpenGlossaryDetail: ([BackendGlossaryTerm]) -> Void
     let onOpenQuizStudy: ([BackendQuiz]) -> Void
+    let onOpenQuestionDetail: (BackendUserQuestion) -> Void
+    @State private var questionText = ""
+    @State private var submittedQuestionText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -56,6 +61,7 @@ struct QuickActionPanel: View {
             explanationContent
             glossaryContent
             quizContent
+            questionContent
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -97,6 +103,20 @@ struct QuickActionPanel: View {
                 return "퀴즈를 생성하는 중..."
             case .loaded(let quizzes):
                 return "퀴즈 생성됨 · \(quizzes.count)개"
+            case .failed(let message):
+                return message
+            }
+        } else if selectedAction == .question {
+            switch questionState {
+            case .idle:
+                return highlightAvailabilityMessage
+            case .loading:
+                return "답변을 생성하는 중..."
+            case .loaded(let userQuestion):
+                if shouldShowQuestionResult(userQuestion) {
+                    return "답변 생성됨 · #\(userQuestion.id)"
+                }
+                return "질문을 수정했습니다. 다시 질문하기를 눌러 새 답변을 생성하세요."
             case .failed(let message):
                 return message
             }
@@ -148,6 +168,17 @@ struct QuickActionPanel: View {
             }
         }
 
+        if selectedAction == .question {
+            switch questionState {
+            case .loaded(let userQuestion):
+                return shouldShowQuestionResult(userQuestion) ? .green : .secondary
+            case .failed:
+                return .red
+            case .idle, .loading:
+                return .secondary
+            }
+        }
+
         switch highlightSaveState {
         case .saved:
             return .green
@@ -155,6 +186,77 @@ struct QuickActionPanel: View {
             return .red
         case .idle, .saving:
             return .secondary
+        }
+    }
+
+    @ViewBuilder
+    private var questionContent: some View {
+        if selectedAction == .question {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    TextField("선택한 문장에 대해 질문하기", text: $questionText)
+                        .textFieldStyle(.roundedBorder)
+                        .submitLabel(.send)
+                        .disabled(isQuestionLoading)
+                        .onSubmit {
+                            submitQuestion()
+                        }
+
+                    Button {
+                        submitQuestion()
+                    } label: {
+                        Label("질문하기", systemImage: "paperplane")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSubmitQuestion)
+                }
+
+                switch questionState {
+                case .loading:
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("선택한 문장과 질문을 backend에 보내 답변을 생성하고 있습니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                case .loaded(let userQuestion):
+                    if shouldShowQuestionResult(userQuestion) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button {
+                                onOpenQuestionDetail(userQuestion)
+                            } label: {
+                                Label("자세히 보기", systemImage: "questionmark.bubble")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+
+                            loadedResultPreview {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(userQuestion.answer)
+                                        .font(.subheadline)
+                                        .lineLimit(4)
+                                        .fixedSize(horizontal: false, vertical: true)
+
+                                    if let evidenceText = trimmedEvidenceText(for: userQuestion) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("근거")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(.secondary)
+                                            Text(evidenceText)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(2)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                case .failed, .idle:
+                    EmptyView()
+                }
+            }
         }
     }
 
@@ -357,9 +459,36 @@ struct QuickActionPanel: View {
 
     private func isDisabled(_ action: QuickAction) -> Bool {
         switch action {
-        case .highlight, .explain, .glossary, .quiz:
+        case .highlight, .explain, .glossary, .quiz, .question:
             return !canRunQuickAction
         }
+    }
+
+    private var canSubmitQuestion: Bool {
+        canRunQuickAction && !trimmed(questionText).isEmpty
+    }
+
+    private var isQuestionLoading: Bool {
+        if case .loading = questionState {
+            return true
+        }
+
+        return false
+    }
+
+    private func submitQuestion() {
+        let normalizedQuestion = trimmed(questionText)
+        guard !normalizedQuestion.isEmpty, canRunQuickAction else {
+            return
+        }
+
+        submittedQuestionText = normalizedQuestion
+        onQuestion(normalizedQuestion)
+    }
+
+    private func shouldShowQuestionResult(_ userQuestion: BackendUserQuestion) -> Bool {
+        trimmed(questionText) == trimmed(userQuestion.question)
+            && submittedQuestionText == trimmed(userQuestion.question)
     }
 
     private func displayTitle(for quizType: String) -> String {
@@ -385,6 +514,15 @@ struct QuickActionPanel: View {
 
     private func trimmed(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func trimmedEvidenceText(for userQuestion: BackendUserQuestion) -> String? {
+        guard let evidenceText = userQuestion.evidenceText else {
+            return nil
+        }
+
+        let normalizedEvidenceText = trimmed(evidenceText)
+        return normalizedEvidenceText.isEmpty ? nil : normalizedEvidenceText
     }
 
     private func loadedResultPreview<Content: View>(
@@ -414,6 +552,7 @@ enum QuickAction: String, CaseIterable, Identifiable {
     case explain
     case glossary
     case quiz
+    case question
 
     var id: String {
         rawValue
@@ -429,6 +568,8 @@ enum QuickAction: String, CaseIterable, Identifiable {
             return "용어"
         case .quiz:
             return "퀴즈"
+        case .question:
+            return "질문"
         }
     }
 
@@ -442,6 +583,8 @@ enum QuickAction: String, CaseIterable, Identifiable {
             return "text.book.closed"
         case .quiz:
             return "questionmark.circle"
+        case .question:
+            return "questionmark.bubble"
         }
     }
 }

@@ -7,12 +7,14 @@ struct ReaderWorkspace: View {
     let explanationState: ExplanationState
     let glossaryState: GlossaryState
     let quizState: QuizState
+    let questionState: QuestionState
     @Binding var pageCount: Int
     let onImport: () -> Void
     let onSaveHighlight: (PDFTextSelection) -> Void
     let onExplain: (PDFTextSelection) -> Void
     let onGlossary: (PDFTextSelection) -> Void
     let onQuiz: (PDFTextSelection) -> Void
+    let onQuestion: (PDFTextSelection, String) -> Void
     let onStudyQuiz: (PDFTextSelection, Int) -> Void
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     let onLoadReviewAgainAttempts: (Int) async throws -> [BackendReviewAgainQuizAttempt]
@@ -41,13 +43,16 @@ struct ReaderWorkspace: View {
                                 explanationState: explanationState,
                                 glossaryState: glossaryState,
                                 quizState: quizState,
+                                questionState: questionState,
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canRunQuickAction: canRunQuickAction,
                                 onSelect: handleQuickAction,
+                                onQuestion: handleQuestion,
                                 onStudyQuiz: handleStudyQuiz,
                                 onOpenExplanationDetail: openExplanationDetail,
                                 onOpenGlossaryDetail: openGlossaryDetail,
-                                onOpenQuizStudy: openQuizStudy
+                                onOpenQuizStudy: openQuizStudy,
+                                onOpenQuestionDetail: openQuestionDetail
                             )
                             .padding(.horizontal, 24)
                             .padding(.bottom, 20)
@@ -109,6 +114,8 @@ struct ReaderWorkspace: View {
                                 quizzes: snapshot.quizzes,
                                 onSaveAttempt: onSaveQuizAttempt
                             )
+                        case .question(let snapshot):
+                            QuestionDetailSheet(userQuestion: snapshot.userQuestion)
                         }
                     }
             } else {
@@ -139,6 +146,10 @@ struct ReaderWorkspace: View {
         }
 
         if case .loading = quizState {
+            return false
+        }
+
+        if case .loading = questionState {
             return false
         }
 
@@ -178,7 +189,14 @@ struct ReaderWorkspace: View {
             onGlossary(selection)
         case .quiz:
             onQuiz(selection)
+        case .question:
+            break
         }
+    }
+
+    private func handleQuestion(_ question: String) {
+        selectedQuickAction = .question
+        onQuestion(selection, question)
     }
 
     private func handleStudyQuiz(maxQuizzes: Int) {
@@ -208,6 +226,10 @@ struct ReaderWorkspace: View {
     private func openQuizStudy(_ quizzes: [BackendQuiz]) {
         activeQuickActionSheet = .quiz(QuizStudySnapshot(quizzes: quizzes))
     }
+
+    private func openQuestionDetail(_ userQuestion: BackendUserQuestion) {
+        activeQuickActionSheet = .question(QuestionSnapshot(userQuestion: userQuestion))
+    }
 }
 
 private struct ReviewAgainSheetSnapshot: Identifiable {
@@ -220,6 +242,7 @@ private enum QuickActionSheet: Identifiable {
     case explanation(ExplanationSnapshot)
     case glossary(GlossarySnapshot)
     case quiz(QuizStudySnapshot)
+    case question(QuestionSnapshot)
 
     var id: UUID {
         switch self {
@@ -228,6 +251,8 @@ private enum QuickActionSheet: Identifiable {
         case .glossary(let snapshot):
             return snapshot.id
         case .quiz(let snapshot):
+            return snapshot.id
+        case .question(let snapshot):
             return snapshot.id
         }
     }
@@ -246,6 +271,11 @@ private struct GlossarySnapshot {
 private struct QuizStudySnapshot {
     let id = UUID()
     let quizzes: [BackendQuiz]
+}
+
+private struct QuestionSnapshot {
+    let id = UUID()
+    let userQuestion: BackendUserQuestion
 }
 
 private struct EmptyReaderState: View {
