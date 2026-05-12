@@ -164,6 +164,7 @@ struct QuizStudySheet: View {
     @State private var answersByQuizID: [Int: String] = [:]
     @State private var revealedQuizIDs: Set<Int> = []
     @State private var saveStatesByQuizID: [Int: QuizAttemptSaveState] = [:]
+    @State private var failedSaveKindsByQuizID: [Int: QuizAttemptSaveKind] = [:]
     @State private var savedSelfCheckKindsByQuizID: [Int: Set<QuizAttemptSaveKind>] = [:]
 
     var body: some View {
@@ -200,6 +201,7 @@ struct QuizStudySheet: View {
                                     }
                                 ),
                                 saveState: saveStatesByQuizID[quiz.id, default: .idle],
+                                failedSaveKind: failedSaveKindsByQuizID[quiz.id],
                                 savedSelfCheckKinds: savedSelfCheckKindsByQuizID[quiz.id, default: []],
                                 onSave: {
                                     saveAttempt(for: quiz, isCorrect: nil, kind: .answerOnly)
@@ -235,6 +237,7 @@ struct QuizStudySheet: View {
                 switch saveStatesByQuizID[quiz.id, default: .idle] {
                 case .saved, .failed:
                     saveStatesByQuizID[quiz.id] = .idle
+                    failedSaveKindsByQuizID[quiz.id] = nil
                     savedSelfCheckKindsByQuizID[quiz.id] = []
                 case .idle, .saving:
                     break
@@ -248,6 +251,7 @@ struct QuizStudySheet: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedAnswer.isEmpty else {
             saveStatesByQuizID[quiz.id] = .failed("답안을 입력한 뒤 저장할 수 있습니다.")
+            failedSaveKindsByQuizID[quiz.id] = kind
             return
         }
 
@@ -257,11 +261,13 @@ struct QuizStudySheet: View {
             do {
                 let attempt = try await onSaveAttempt(quiz.id, normalizedAnswer, isCorrect)
                 saveStatesByQuizID[quiz.id] = .saved(attempt, kind)
+                failedSaveKindsByQuizID[quiz.id] = nil
                 if kind == .correct || kind == .reviewAgain {
                     savedSelfCheckKindsByQuizID[quiz.id, default: []].insert(kind)
                 }
             } catch {
                 saveStatesByQuizID[quiz.id] = .failed(error.localizedDescription)
+                failedSaveKindsByQuizID[quiz.id] = kind
             }
         }
     }
@@ -271,8 +277,10 @@ struct ReviewAgainQuizAttemptsSheet: View {
     let documentID: Int
     let documentTitle: String
     let onLoad: (Int) async throws -> [BackendReviewAgainQuizAttempt]
+    let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
     @State private var state: ReviewAgainLoadState = .idle
+    @State private var activeReplaySheet: ReviewAgainReplaySnapshot?
 
     var body: some View {
         NavigationStack {
@@ -287,6 +295,12 @@ struct ReviewAgainQuizAttemptsSheet: View {
                         }
                     }
                 }
+        }
+        .sheet(item: $activeReplaySheet) { snapshot in
+            ReviewAgainReplaySheet(
+                attempt: snapshot.attempt,
+                onSaveAttempt: onSaveAttempt
+            )
         }
         .task {
             guard case .idle = state else {
@@ -380,7 +394,12 @@ struct ReviewAgainQuizAttemptsSheet: View {
                 .padding(.bottom, 4)
 
                 ForEach(attempts, id: \.attemptID) { attempt in
-                    ReviewAgainQuizAttemptCard(attempt: attempt)
+                    ReviewAgainQuizAttemptCard(
+                        attempt: attempt,
+                        onReplay: {
+                            activeReplaySheet = ReviewAgainReplaySnapshot(attempt: attempt)
+                        }
+                    )
                 }
             }
             .padding(24)
@@ -406,8 +425,14 @@ private enum ReviewAgainLoadState: Equatable {
     case failed(String)
 }
 
+private struct ReviewAgainReplaySnapshot: Identifiable {
+    let id = UUID()
+    let attempt: BackendReviewAgainQuizAttempt
+}
+
 private struct ReviewAgainQuizAttemptCard: View {
     let attempt: BackendReviewAgainQuizAttempt
+    let onReplay: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -420,6 +445,11 @@ private struct ReviewAgainQuizAttemptCard: View {
             if let sourceText = trimmedSourceText {
                 sourceSection(text: sourceText)
             }
+
+            Button(action: onReplay) {
+                Label("다시 풀기", systemImage: "pencil")
+            }
+            .buttonStyle(.borderedProminent)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -502,6 +532,240 @@ private struct ReviewAgainQuizAttemptCard: View {
     }
 }
 
+private struct ReviewAgainReplaySheet: View {
+    let attempt: BackendReviewAgainQuizAttempt
+    let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
+    @Environment(\.dismiss) private var dismiss
+    @State private var answer = ""
+    @State private var isRevealed = false
+    @State private var saveState: QuizAttemptSaveState = .idle
+    @State private var savedSelfCheckKinds: Set<QuizAttemptSaveKind> = []
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    titleBlock
+                    previousAnswerBlock
+                    answerInputBlock
+                    actionRow
+
+                    if isRevealed {
+                        revealedAnswerBlock
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("다시 풀기")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("닫기") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .onChange(of: answer) { _ in
+            switch saveState {
+            case .saved, .failed:
+                saveState = .idle
+                savedSelfCheckKinds = []
+            case .idle, .saving:
+                break
+            }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(displayTitle(for: attempt.quizType))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Text("p. \(attempt.pageNumber)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(attempt.question)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(.separator), lineWidth: 0.5)
+        }
+    }
+
+    private var previousAnswerBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("이전 답안")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(attempt.userAnswer)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var answerInputBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("새 답안")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            TextEditor(text: $answer)
+                .frame(minHeight: 120)
+                .padding(8)
+                .scrollContentBackground(.hidden)
+                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color(.separator), lineWidth: 0.5)
+                }
+        }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                isRevealed.toggle()
+            } label: {
+                Label(isRevealed ? "답 숨기기" : "답 보기", systemImage: isRevealed ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.bordered)
+
+            if case .saving = saveState {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var saveStatusView: some View {
+        switch saveState {
+        case .idle, .saving:
+            EmptyView()
+        case .saved(let attempt, let kind):
+            Label(savedMessage(for: attempt, kind: kind), systemImage: "checkmark.circle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.green)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var revealedAnswerBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            answerBlock(title: "정답", text: attempt.answer)
+            answerBlock(title: "해설", text: attempt.explanation)
+
+            if let sourceText = trimmedSourceText {
+                answerBlock(title: "근거", text: sourceText)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    saveAttempt(isCorrect: true, kind: .correct)
+                } label: {
+                    Label("맞음", systemImage: "checkmark.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSelfCheckDisabled(.correct))
+
+                Button {
+                    saveAttempt(isCorrect: false, kind: .reviewAgain)
+                } label: {
+                    Label("다시 보기", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSelfCheckDisabled(.reviewAgain))
+            }
+
+            saveStatusView
+        }
+        .transition(.opacity)
+    }
+
+    private func answerBlock(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var trimmedSourceText: String? {
+        let trimmedText = attempt.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedText.isEmpty ? nil : trimmedText
+    }
+
+    private func isSelfCheckDisabled(_ kind: QuizAttemptSaveKind) -> Bool {
+        if case .saving = saveState {
+            return true
+        }
+
+        return savedSelfCheckKinds.contains(kind)
+    }
+
+    private func saveAttempt(isCorrect: Bool, kind: QuizAttemptSaveKind) {
+        let normalizedAnswer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedAnswer.isEmpty else {
+            saveState = .failed("답안을 입력한 뒤 저장할 수 있습니다.")
+            return
+        }
+
+        saveState = .saving
+
+        Task { @MainActor in
+            do {
+                let savedAttempt = try await onSaveAttempt(attempt.quizID, normalizedAnswer, isCorrect)
+                saveState = .saved(savedAttempt, kind)
+                savedSelfCheckKinds.insert(kind)
+            } catch {
+                saveState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func savedMessage(for attempt: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+        switch kind {
+        case .answerOnly:
+            return "저장됨 · #\(attempt.id)"
+        case .correct:
+            return "맞음으로 저장됨 · #\(attempt.id)"
+        case .reviewAgain:
+            return "다시 보기로 저장됨 · #\(attempt.id)"
+        }
+    }
+
+    private func displayTitle(for quizType: String) -> String {
+        switch quizType {
+        case "short_answer":
+            return "단답형"
+        case "fill_blank":
+            return "빈칸"
+        default:
+            return quizType
+        }
+    }
+}
+
 private enum QuizAttemptSaveKind: Hashable {
     case answerOnly
     case correct
@@ -520,6 +784,7 @@ private struct QuizStudyCard: View {
     @Binding var answer: String
     @Binding var isRevealed: Bool
     let saveState: QuizAttemptSaveState
+    let failedSaveKind: QuizAttemptSaveKind?
     let savedSelfCheckKinds: Set<QuizAttemptSaveKind>
     let onSave: () -> Void
     let onSaveSelfCheck: (Bool, QuizAttemptSaveKind) -> Void
@@ -570,7 +835,7 @@ private struct QuizStudyCard: View {
                 }
             }
 
-            saveStatusView
+            answerSaveStatusView
 
             if isRevealed {
                 VStack(alignment: .leading, spacing: 10) {
@@ -595,6 +860,8 @@ private struct QuizStudyCard: View {
                         .buttonStyle(.bordered)
                         .disabled(isSelfCheckDisabled(.reviewAgain))
                     }
+
+                    selfCheckStatusView
                 }
                 .transition(.opacity)
             }
@@ -620,20 +887,46 @@ private struct QuizStudyCard: View {
     }
 
     @ViewBuilder
-    private var saveStatusView: some View {
+    private var answerSaveStatusView: some View {
         switch saveState {
         case .idle, .saving:
             EmptyView()
         case .saved(let attempt, let kind):
-            Label(savedMessage(for: attempt, kind: kind), systemImage: "checkmark.circle.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.green)
+            if kind == .answerOnly {
+                Label(savedMessage(for: attempt, kind: kind), systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+            }
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
+            if failedSaveKind == .answerOnly {
+                failedStatusLabel(message)
+            }
         }
+    }
+
+    @ViewBuilder
+    private var selfCheckStatusView: some View {
+        switch saveState {
+        case .idle, .saving:
+            EmptyView()
+        case .saved(let attempt, let kind):
+            if kind == .correct || kind == .reviewAgain {
+                Label(savedMessage(for: attempt, kind: kind), systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+            }
+        case .failed(let message):
+            if failedSaveKind == .correct || failedSaveKind == .reviewAgain {
+                failedStatusLabel(message)
+            }
+        }
+    }
+
+    private func failedStatusLabel(_ message: String) -> some View {
+        Label(message, systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var isAnswerSaveDisabled: Bool {

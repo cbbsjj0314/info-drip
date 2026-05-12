@@ -94,7 +94,8 @@ struct ReaderWorkspace: View {
                         ReviewAgainQuizAttemptsSheet(
                             documentID: snapshot.documentID,
                             documentTitle: snapshot.documentTitle,
-                            onLoad: onLoadReviewAgainAttempts
+                            onLoad: onLoadReviewAgainAttempts,
+                            onSaveAttempt: onSaveQuizAttempt
                         )
                     }
                     .sheet(item: $activeQuickActionSheet) { sheet in
