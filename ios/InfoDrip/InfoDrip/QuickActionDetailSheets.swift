@@ -278,11 +278,9 @@ struct ReviewAgainQuizAttemptsSheet: View {
     let documentTitle: String
     let onLoad: (Int) async throws -> [BackendReviewAgainQuizAttempt]
     let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
-    let onGenerateReviewCard: (Int) async throws -> BackendReviewCard
     @Environment(\.dismiss) private var dismiss
     @State private var state: ReviewAgainLoadState = .idle
     @State private var activeReplaySheet: ReviewAgainReplaySnapshot?
-    @State private var reviewCardStatesByAttemptID: [Int: ReviewCardGenerationState] = [:]
 
     var body: some View {
         NavigationStack {
@@ -398,12 +396,8 @@ struct ReviewAgainQuizAttemptsSheet: View {
                 ForEach(attempts, id: \.attemptID) { attempt in
                     ReviewAgainQuizAttemptCard(
                         attempt: attempt,
-                        generationState: reviewCardStatesByAttemptID[attempt.attemptID] ?? .idle,
                         onReplay: {
                             activeReplaySheet = ReviewAgainReplaySnapshot(attempt: attempt)
-                        },
-                        onGenerateReviewCard: {
-                            generateReviewCard(for: attempt)
                         }
                     )
                 }
@@ -422,32 +416,12 @@ struct ReviewAgainQuizAttemptsSheet: View {
             state = .failed(error.localizedDescription)
         }
     }
-
-    private func generateReviewCard(for attempt: BackendReviewAgainQuizAttempt) {
-        reviewCardStatesByAttemptID[attempt.attemptID] = .generating
-
-        Task { @MainActor in
-            do {
-                let reviewCard = try await onGenerateReviewCard(attempt.attemptID)
-                reviewCardStatesByAttemptID[attempt.attemptID] = .generated(reviewCard)
-            } catch {
-                reviewCardStatesByAttemptID[attempt.attemptID] = .failed(error.localizedDescription)
-            }
-        }
-    }
 }
 
 private enum ReviewAgainLoadState: Equatable {
     case idle
     case loading
     case loaded([BackendReviewAgainQuizAttempt])
-    case failed(String)
-}
-
-private enum ReviewCardGenerationState: Equatable {
-    case idle
-    case generating
-    case generated(BackendReviewCard)
     case failed(String)
 }
 
@@ -458,9 +432,7 @@ private struct ReviewAgainReplaySnapshot: Identifiable {
 
 private struct ReviewAgainQuizAttemptCard: View {
     let attempt: BackendReviewAgainQuizAttempt
-    let generationState: ReviewCardGenerationState
     let onReplay: () -> Void
-    let onGenerateReviewCard: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -491,57 +463,8 @@ private struct ReviewAgainQuizAttemptCard: View {
                 Label("다시 풀기", systemImage: "pencil")
             }
             .buttonStyle(.borderedProminent)
-
-            Button(action: onGenerateReviewCard) {
-                Label("복습 카드 만들기", systemImage: "rectangle.stack.badge.plus")
-            }
-            .buttonStyle(.bordered)
-            .disabled(isReviewCardGenerationDisabled)
-
-            reviewCardGenerationStatus
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var reviewCardGenerationStatus: some View {
-        switch generationState {
-        case .idle:
-            EmptyView()
-        case .generating:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("복습 카드를 생성하는 중입니다.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .generated(let reviewCard):
-            VStack(alignment: .leading, spacing: 4) {
-                Label("복습 카드 생성됨 · #\(reviewCard.id)", systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.green)
-
-                Text(reviewCard.front)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var isReviewCardGenerationDisabled: Bool {
-        switch generationState {
-        case .generating, .generated:
-            return true
-        case .idle, .failed:
-            return false
-        }
     }
 
     private var titleBlock: some View {

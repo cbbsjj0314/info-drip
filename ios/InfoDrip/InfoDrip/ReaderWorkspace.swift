@@ -16,7 +16,6 @@ struct ReaderWorkspace: View {
     let onStudyQuiz: (PDFTextSelection, Int) -> Void
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     let onLoadReviewAgainAttempts: (Int) async throws -> [BackendReviewAgainQuizAttempt]
-    let onGenerateReviewCard: (Int) async throws -> BackendReviewCard
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
     @State private var activeReviewAgainSheet: ReviewAgainSheetSnapshot?
@@ -96,8 +95,7 @@ struct ReaderWorkspace: View {
                             documentID: snapshot.documentID,
                             documentTitle: snapshot.documentTitle,
                             onLoad: onLoadReviewAgainAttempts,
-                            onSaveAttempt: onSaveQuizAttempt,
-                            onGenerateReviewCard: onGenerateReviewCard
+                            onSaveAttempt: onSaveQuizAttempt
                         )
                     }
                     .sheet(item: $activeQuickActionSheet) { sheet in
