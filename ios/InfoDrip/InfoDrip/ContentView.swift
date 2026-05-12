@@ -62,9 +62,6 @@ struct ContentView: View {
                 onLoadReviewAgainAttempts: { documentID in
                     try await pdfStore.listReviewAgainQuizAttempts(documentID: documentID)
                 },
-                onGenerateReviewCard: { attemptID in
-                    try await pdfStore.createReviewCard(attemptID: attemptID)
-                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
                     pdfStore.clearExplanationState()
