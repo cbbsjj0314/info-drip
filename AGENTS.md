@@ -12,7 +12,7 @@ Keep this file short. Put detailed repeatable procedures in `docs/runbook/`.
 
 InfoDrip is a personal iPad PDF learning assistant.
 
-It helps the user read PDF documents, select passages, request LLM explanations, extract glossary terms, generate quizzes, track wrong answers, and create review cards.
+It helps the user read PDF documents, select passages, request LLM explanations, extract glossary terms, generate quizzes, track quiz attempts, and replay review-again quiz attempts.
 
 The project is not a generic PDF chatbot. It is a selected-text based learning workflow app that stores study activity as structured data.
 
@@ -51,9 +51,11 @@ InfoDrip MVP focuses on this flow:
     → question answering
     → quiz generation
     → quiz attempt tracking
-    → wrong answer tracking
-    → review card generation
+    → review-again tracking
+    → review-again replay
     → document-level study record lookup
+
+`review_cards` exists as backend/API capability, but separate review card UX is deferred and not the primary MVP review flow.
 
 ## Non-goals
 
@@ -70,6 +72,7 @@ InfoDrip MVP is not:
 - a payment or subscription product
 - a real-time collaboration tool
 - an Apple Pencil handwriting recognition app
+- a separate review card list/detail/edit/delete UX
 
 ## Core Boundary
 
@@ -104,6 +107,8 @@ MVP persistence should focus on:
 - review_cards
 - llm_request_logs
 
+Primary review UX should center on `quiz_attempts` and review-again listing/replay. Treat `review_cards` as deferred backend/API capability unless explicitly requested.
+
 Avoid adding broad analytics, dashboards, recommendation engines, or complex review scheduling unless explicitly requested.
 
 ## LLM Boundary
@@ -116,7 +121,7 @@ Expected LLM tasks:
 - glossary extraction
 - question answering
 - quiz generation
-- review card generation
+- optional/deferred: review card generation
 - later: weakness analysis
 
 Rules:
