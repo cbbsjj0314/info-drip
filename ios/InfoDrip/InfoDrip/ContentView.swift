@@ -19,6 +19,7 @@ struct ContentView: View {
                 explanationState: pdfStore.explanationState,
                 glossaryState: pdfStore.glossaryState,
                 quizState: pdfStore.quizState,
+                questionState: pdfStore.questionState,
                 pageCount: $pageCount,
                 onImport: { isImporterPresented = true },
                 onSaveHighlight: { selection in
@@ -45,6 +46,13 @@ struct ContentView: View {
                         pageNumber: selection.pageNumber
                     )
                 },
+                onQuestion: { selection, question in
+                    pdfStore.createQuestionForSelection(
+                        text: selection.text,
+                        pageNumber: selection.pageNumber,
+                        question: question
+                    )
+                },
                 onStudyQuiz: { selection, count in
                     pdfStore.createQuizzesForSelection(
                         text: selection.text,
@@ -67,6 +75,7 @@ struct ContentView: View {
                     pdfStore.clearExplanationState()
                     pdfStore.clearGlossaryState()
                     pdfStore.clearQuizState()
+                    pdfStore.clearQuestionState()
                 }
             )
         }

@@ -123,6 +123,30 @@ struct BackendQuiz: Equatable, Decodable {
     }
 }
 
+struct BackendUserQuestion: Equatable, Decodable {
+    let id: Int
+    let documentID: Int
+    let highlightID: Int
+    let question: String
+    let answer: String
+    let evidenceText: String?
+    let provider: String
+    let model: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case documentID = "document_id"
+        case highlightID = "highlight_id"
+        case question
+        case answer
+        case evidenceText = "evidence_text"
+        case provider
+        case model
+        case createdAt = "created_at"
+    }
+}
+
 struct BackendQuizAttempt: Equatable, Decodable {
     let id: Int
     let quizID: Int
@@ -235,6 +259,13 @@ enum QuizState: Equatable {
     case idle
     case loading
     case loaded([BackendQuiz])
+    case failed(String)
+}
+
+enum QuestionState: Equatable {
+    case idle
+    case loading
+    case loaded(BackendUserQuestion)
     case failed(String)
 }
 
@@ -378,6 +409,37 @@ struct BackendAPIClient {
         return try JSONDecoder().decode([BackendQuiz].self, from: data)
     }
 
+    func createQuestion(highlightID: Int, question: String) async throws -> BackendUserQuestion {
+        let normalizedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuestion.isEmpty else {
+            throw BackendAPIError.invalidRequest("Enter a question before asking.")
+        }
+
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/highlights")
+            .appendingPathComponent(String(highlightID))
+            .appendingPathComponent("questions")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            QuestionCreatePayload(question: normalizedQuestion)
+        )
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 201 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode(BackendUserQuestion.self, from: data)
+    }
+
     func createQuizAttempt(
         quizID: Int,
         userAnswer: String,
@@ -519,6 +581,10 @@ struct BackendAPIClient {
             case feedback
         }
     }
+
+    private struct QuestionCreatePayload: Encodable {
+        let question: String
+    }
 }
 
 enum BackendAPIError: LocalizedError {
@@ -555,6 +621,7 @@ final class LocalPDFStore: ObservableObject {
     @Published private(set) var explanationState: ExplanationState = .idle
     @Published private(set) var glossaryState: GlossaryState = .idle
     @Published private(set) var quizState: QuizState = .idle
+    @Published private(set) var questionState: QuestionState = .idle
     @Published private(set) var lastSavedHighlight: BackendHighlight?
 
     private let apiClient: BackendAPIClient
@@ -575,6 +642,7 @@ final class LocalPDFStore: ObservableObject {
         explanationState = .idle
         glossaryState = .idle
         quizState = .idle
+        questionState = .idle
         lastSavedHighlight = nil
 
         Task {
@@ -696,6 +764,41 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
+    func createQuestionForSelection(text: String, pageNumber: Int?, question: String) {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            questionState = .failed("Backend document is not ready.")
+            return
+        }
+
+        guard let pageNumber else {
+            questionState = .failed("Could not find the selected page.")
+            return
+        }
+
+        let selectedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedText.isEmpty else {
+            questionState = .failed("Select text before asking a question.")
+            return
+        }
+
+        let normalizedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuestion.isEmpty else {
+            questionState = .failed("Enter a question before asking.")
+            return
+        }
+
+        questionState = .loading
+
+        Task {
+            await createQuestion(
+                documentID: backendDocument.id,
+                pageNumber: pageNumber,
+                selectedText: selectedText,
+                question: normalizedQuestion
+            )
+        }
+    }
+
     func clearHighlightSaveState() {
         highlightSaveState = .idle
         lastSavedHighlight = nil
@@ -711,6 +814,10 @@ final class LocalPDFStore: ObservableObject {
 
     func clearQuizState() {
         quizState = .idle
+    }
+
+    func clearQuestionState() {
+        questionState = .idle
     }
 
     func createQuizAttempt(
@@ -861,6 +968,41 @@ final class LocalPDFStore: ObservableObject {
                 highlightSaveState = .failed(error.localizedDescription)
             }
             quizState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func createQuestion(
+        documentID: Int,
+        pageNumber: Int,
+        selectedText: String,
+        question: String
+    ) async {
+        do {
+            let highlight = try await highlightForCurrentSelection(
+                documentID: documentID,
+                pageNumber: pageNumber,
+                selectedText: selectedText
+            )
+            let userQuestion = try await apiClient.createQuestion(
+                highlightID: highlight.id,
+                question: question
+            )
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            lastSavedHighlight = highlight
+            highlightSaveState = .saved(highlight)
+            questionState = .loaded(userQuestion)
+        } catch {
+            guard currentDocument?.backendDocument?.id == documentID else {
+                return
+            }
+
+            if case .saving = highlightSaveState {
+                highlightSaveState = .failed(error.localizedDescription)
+            }
+            questionState = .failed(error.localizedDescription)
         }
     }
 
