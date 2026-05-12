@@ -59,6 +59,9 @@ struct ContentView: View {
                         isCorrect: isCorrect
                     )
                 },
+                onLoadReviewAgainAttempts: { documentID in
+                    try await pdfStore.listReviewAgainQuizAttempts(documentID: documentID)
+                },
                 onClearHighlightState: {
                     pdfStore.clearHighlightSaveState()
                     pdfStore.clearExplanationState()

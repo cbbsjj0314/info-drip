@@ -141,6 +141,42 @@ struct BackendQuizAttempt: Equatable, Decodable {
     }
 }
 
+struct BackendReviewAgainQuizAttempt: Equatable, Decodable {
+    let attemptID: Int
+    let quizID: Int
+    let documentID: Int
+    let highlightID: Int
+    let userAnswer: String
+    let isCorrect: Bool?
+    let feedback: String?
+    let attemptedAt: String
+    let quizType: String
+    let question: String
+    let answer: String
+    let explanation: String
+    let sourceText: String
+    let documentTitle: String
+    let pageNumber: Int
+
+    enum CodingKeys: String, CodingKey {
+        case attemptID = "attempt_id"
+        case quizID = "quiz_id"
+        case documentID = "document_id"
+        case highlightID = "highlight_id"
+        case userAnswer = "user_answer"
+        case isCorrect = "is_correct"
+        case feedback
+        case attemptedAt = "attempted_at"
+        case quizType = "quiz_type"
+        case question
+        case answer
+        case explanation
+        case sourceText = "source_text"
+        case documentTitle = "document_title"
+        case pageNumber = "page_number"
+    }
+}
+
 enum PDFUploadState: Equatable {
     case idle
     case uploading
@@ -354,6 +390,37 @@ struct BackendAPIClient {
         }
 
         return try JSONDecoder().decode(BackendQuizAttempt.self, from: data)
+    }
+
+    func listReviewAgainQuizAttempts(documentID: Int? = nil) async throws -> [BackendReviewAgainQuizAttempt] {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/quiz-attempts/review-again")
+        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+        if let documentID {
+            components?.queryItems = [
+                URLQueryItem(name: "document_id", value: String(documentID))
+            ]
+        }
+
+        guard let url = components?.url else {
+            throw BackendAPIError.invalidRequest("Could not build review-again request URL.")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        return try JSONDecoder().decode([BackendReviewAgainQuizAttempt].self, from: data)
     }
 
     private func multipartBody(fileURL: URL, fieldName: String, boundary: String) throws -> Data {
@@ -610,6 +677,10 @@ final class LocalPDFStore: ObservableObject {
             isCorrect: isCorrect,
             feedback: feedback
         )
+    }
+
+    func listReviewAgainQuizAttempts(documentID: Int? = nil) async throws -> [BackendReviewAgainQuizAttempt] {
+        try await apiClient.listReviewAgainQuizAttempts(documentID: documentID)
     }
 
     private func upload(documentID: UUID, fileURL: URL) async {

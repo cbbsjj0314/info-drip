@@ -15,8 +15,10 @@ struct ReaderWorkspace: View {
     let onQuiz: (PDFTextSelection) -> Void
     let onStudyQuiz: (PDFTextSelection, Int) -> Void
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
+    let onLoadReviewAgainAttempts: (Int) async throws -> [BackendReviewAgainQuizAttempt]
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
+    @State private var activeReviewAgainSheet: ReviewAgainSheetSnapshot?
     @State private var activeQuickActionSheet: QuickActionSheet?
     @State private var selection = PDFTextSelection.empty
     @State private var selectedQuickAction: QuickAction?
@@ -64,6 +66,11 @@ struct ReaderWorkspace: View {
                     }
                     .toolbar {
                         ToolbarItemGroup(placement: .navigationBarTrailing) {
+                            Button(action: openReviewAgainList) {
+                                Label("다시 보기 목록", systemImage: "arrow.counterclockwise")
+                            }
+                            .disabled(!canOpenReviewAgainList)
+
                             Button {
                                 isDocumentInfoPresented = true
                             } label: {
@@ -83,6 +90,13 @@ struct ReaderWorkspace: View {
                         )
                             .presentationDetents([.medium])
                     }
+                    .sheet(item: $activeReviewAgainSheet) { snapshot in
+                        ReviewAgainQuizAttemptsSheet(
+                            documentID: snapshot.documentID,
+                            documentTitle: snapshot.documentTitle,
+                            onLoad: onLoadReviewAgainAttempts
+                        )
+                    }
                     .sheet(item: $activeQuickActionSheet) { sheet in
                         switch sheet {
                         case .explanation(let snapshot):
@@ -100,6 +114,14 @@ struct ReaderWorkspace: View {
                 EmptyReaderState(onImport: onImport)
             }
         }
+    }
+
+    private var canOpenReviewAgainList: Bool {
+        if case .uploaded = uploadState {
+            return true
+        }
+
+        return false
     }
 
     private var canRunQuickAction: Bool {
@@ -163,6 +185,17 @@ struct ReaderWorkspace: View {
         onStudyQuiz(selection, maxQuizzes)
     }
 
+    private func openReviewAgainList() {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            return
+        }
+
+        activeReviewAgainSheet = ReviewAgainSheetSnapshot(
+            documentID: backendDocument.id,
+            documentTitle: backendDocument.title
+        )
+    }
+
     private func openExplanationDetail(_ explanation: BackendExplanation) {
         activeQuickActionSheet = .explanation(ExplanationSnapshot(explanation: explanation))
     }
@@ -174,6 +207,12 @@ struct ReaderWorkspace: View {
     private func openQuizStudy(_ quizzes: [BackendQuiz]) {
         activeQuickActionSheet = .quiz(QuizStudySnapshot(quizzes: quizzes))
     }
+}
+
+private struct ReviewAgainSheetSnapshot: Identifiable {
+    let id = UUID()
+    let documentID: Int
+    let documentTitle: String
 }
 
 private enum QuickActionSheet: Identifiable {
