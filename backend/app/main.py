@@ -813,6 +813,30 @@ def list_review_again_quiz_attempts(
     ]
 
 
+@app.get(
+    "/api/v1/review-cards",
+    response_model=list[ReviewCardResponse],
+)
+def list_review_cards(
+    document_id: int | None = None,
+    db: Session = Depends(get_db_session),
+) -> list[ReviewCard]:
+    if document_id is not None and db.get(Document, document_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    statement = select(ReviewCard).order_by(
+        ReviewCard.created_at.desc(),
+        ReviewCard.id.desc(),
+    )
+    if document_id is not None:
+        statement = statement.where(ReviewCard.document_id == document_id)
+
+    return list(db.scalars(statement))
+
+
 @app.post(
     "/api/v1/quiz-attempts/{attempt_id}/review-cards",
     response_model=ReviewCardResponse,
