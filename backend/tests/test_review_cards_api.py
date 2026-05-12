@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,19 @@ from app.llm import (
     ReviewCardGenerationResponse,
 )
 from app.main import app, get_llm_provider
+
+REVIEW_CARD_RESPONSE_KEYS = {
+    "id",
+    "document_id",
+    "quiz_id",
+    "quiz_attempt_id",
+    "front",
+    "back",
+    "source_text",
+    "provider",
+    "model",
+    "created_at",
+}
 
 
 @dataclass(frozen=True)
@@ -132,6 +146,217 @@ def successful_review_card_response(
 
 def review_card_count(session: Session) -> int:
     return session.scalar(select(func.count()).select_from(database.ReviewCard)) or 0
+
+
+def add_review_card(
+    test_session: sessionmaker[Session],
+    context: ReviewCardContext,
+    *,
+    front: str,
+    back: str,
+    created_at: datetime,
+    source_text: str | None = "selected concept",
+) -> int:
+    with test_session() as session:
+        review_card = database.ReviewCard(
+            document_id=context.document_id,
+            quiz_id=context.quiz_id,
+            quiz_attempt_id=context.attempt_id,
+            front=front,
+            back=back,
+            source_text=source_text,
+            provider="fake-provider",
+            model="fake-model",
+            created_at=created_at,
+        )
+        session.add(review_card)
+        session.commit()
+        session.refresh(review_card)
+        return review_card.id
+
+
+def test_list_review_cards_returns_all_cards_newest_first() -> None:
+    test_session = build_test_session()
+    first_context = create_review_card_context(test_session)
+    second_context = create_review_card_context(test_session)
+    older_at = datetime(2026, 5, 12, 10, 30, tzinfo=UTC)
+    newer_at = datetime(2026, 5, 12, 10, 31, tzinfo=UTC)
+
+    older_id = add_review_card(
+        test_session,
+        first_context,
+        front="Older card",
+        back="Older answer",
+        created_at=older_at,
+    )
+    newer_first_id = add_review_card(
+        test_session,
+        first_context,
+        front="Newer first inserted card",
+        back="Newer first answer",
+        created_at=newer_at,
+    )
+    newer_second_id = add_review_card(
+        test_session,
+        second_context,
+        front="Newer second inserted card",
+        back="Newer second answer",
+        created_at=newer_at,
+    )
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/v1/review-cards")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert [item["id"] for item in payload] == [
+            newer_second_id,
+            newer_first_id,
+            older_id,
+        ]
+        assert [item["front"] for item in payload] == [
+            "Newer second inserted card",
+            "Newer first inserted card",
+            "Older card",
+        ]
+        assert all(set(item) == REVIEW_CARD_RESPONSE_KEYS for item in payload)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_review_cards_filters_by_document_id() -> None:
+    test_session = build_test_session()
+    first_context = create_review_card_context(test_session)
+    second_context = create_review_card_context(test_session)
+    created_at = datetime(2026, 5, 12, 10, 30, tzinfo=UTC)
+    add_review_card(
+        test_session,
+        first_context,
+        front="First document card",
+        back="First document answer",
+        created_at=created_at,
+    )
+    second_card_id = add_review_card(
+        test_session,
+        second_context,
+        front="Second document card",
+        back="Second document answer",
+        created_at=created_at,
+    )
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get(
+            f"/api/v1/review-cards?document_id={second_context.document_id}"
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert [item["id"] for item in payload] == [second_card_id]
+        assert {item["document_id"] for item in payload} == {second_context.document_id}
+        assert payload[0]["front"] == "Second document card"
+        assert set(payload[0]) == REVIEW_CARD_RESPONSE_KEYS
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_review_cards_rejects_missing_document_filter() -> None:
+    test_session = build_test_session()
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/v1/review-cards?document_id=404")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Document not found."}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_review_cards_returns_empty_list() -> None:
+    test_session = build_test_session()
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/v1/review-cards")
+
+        assert response.status_code == 200
+        assert response.json() == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_review_cards_returns_flat_response_shape_and_nullable_source_text() -> None:
+    test_session = build_test_session()
+    context = create_review_card_context(test_session)
+    created_at = datetime(2026, 5, 12, 10, 30, tzinfo=UTC)
+    review_card_id = add_review_card(
+        test_session,
+        context,
+        front="Nullable source card",
+        back="Nullable source answer",
+        source_text=None,
+        created_at=created_at,
+    )
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/v1/review-cards")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload == [
+            {
+                "id": review_card_id,
+                "document_id": context.document_id,
+                "quiz_id": context.quiz_id,
+                "quiz_attempt_id": context.attempt_id,
+                "front": "Nullable source card",
+                "back": "Nullable source answer",
+                "source_text": None,
+                "provider": "fake-provider",
+                "model": "fake-model",
+                "created_at": payload[0]["created_at"],
+            }
+        ]
+        assert set(payload[0]) == REVIEW_CARD_RESPONSE_KEYS
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_review_cards_does_not_create_llm_request_logs() -> None:
+    test_session = build_test_session()
+    context = create_review_card_context(test_session)
+    add_review_card(
+        test_session,
+        context,
+        front="Log-free card",
+        back="Log-free answer",
+        created_at=datetime(2026, 5, 12, 10, 30, tzinfo=UTC),
+    )
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.get("/api/v1/review-cards")
+
+        assert response.status_code == 200
+        with test_session() as session:
+            assert session.scalars(select(database.LLMRequestLog)).all() == []
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_create_review_card_success_stores_card_and_success_log() -> None:
