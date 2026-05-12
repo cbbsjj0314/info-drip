@@ -46,6 +46,7 @@ def test_document_tables_can_be_created_from_metadata() -> None:
         "llm_request_logs",
         "quizzes",
         "quiz_attempts",
+        "review_cards",
     }
 
     document_columns = {column["name"] for column in inspector.get_columns("documents")}
@@ -235,6 +236,60 @@ def test_document_tables_can_be_created_from_metadata() -> None:
             "referred_columns": ["id"],
             "options": {},
         }
+    ]
+
+    review_card_columns = {
+        column["name"] for column in inspector.get_columns("review_cards")
+    }
+    assert review_card_columns == {
+        "id",
+        "document_id",
+        "quiz_id",
+        "quiz_attempt_id",
+        "front",
+        "back",
+        "source_text",
+        "provider",
+        "model",
+        "created_at",
+    }
+
+    source_text_column = next(
+        column
+        for column in inspector.get_columns("review_cards")
+        if column["name"] == "source_text"
+    )
+    assert source_text_column["nullable"] is True
+
+    review_card_foreign_keys = sorted(
+        inspector.get_foreign_keys("review_cards"),
+        key=lambda foreign_key: foreign_key["constrained_columns"],
+    )
+    assert review_card_foreign_keys == [
+        {
+            "name": None,
+            "constrained_columns": ["document_id"],
+            "referred_schema": None,
+            "referred_table": "documents",
+            "referred_columns": ["id"],
+            "options": {},
+        },
+        {
+            "name": None,
+            "constrained_columns": ["quiz_attempt_id"],
+            "referred_schema": None,
+            "referred_table": "quiz_attempts",
+            "referred_columns": ["id"],
+            "options": {},
+        },
+        {
+            "name": None,
+            "constrained_columns": ["quiz_id"],
+            "referred_schema": None,
+            "referred_table": "quizzes",
+            "referred_columns": ["id"],
+            "options": {},
+        },
     ]
 
     llm_log_columns = {column["name"] for column in inspector.get_columns("llm_request_logs")}
@@ -558,6 +613,84 @@ def test_quiz_attempt_relationship_persists_and_cascades_from_quiz() -> None:
         session.commit()
 
         assert session.get(database.QuizAttempt, attempt_id) is None
+
+
+def test_review_card_relationship_persists_and_cascades_from_quiz_attempt() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    database.Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        document = database.Document(
+            title="Sample",
+            original_filename="sample.pdf",
+            storage_path="documents/sample.pdf",
+            page_count=1,
+            pages=[
+                database.DocumentPage(
+                    page_number=1,
+                    text="Sanitized sample page text.",
+                )
+            ],
+            highlights=[
+                database.Highlight(
+                    page_number=1,
+                    selected_text="Sanitized selected text.",
+                )
+            ],
+        )
+        session.add(document)
+        session.flush()
+
+        highlight = document.highlights[0]
+        quiz = database.Quiz(
+            document=document,
+            highlight=highlight,
+            quiz_type="short_answer",
+            question="Sanitized question?",
+            answer="Sanitized answer.",
+            explanation="Sanitized explanation.",
+            source_text="selected text",
+            provider="fake-provider",
+            model="fake-model",
+            attempts=[
+                database.QuizAttempt(
+                    user_answer="Sanitized wrong answer.",
+                    is_correct=False,
+                    feedback=None,
+                    review_cards=[
+                        database.ReviewCard(
+                            document_id=1,
+                            quiz_id=1,
+                            front="Sanitized front?",
+                            back="Sanitized back.",
+                            source_text=None,
+                            provider="fake-provider",
+                            model="fake-model",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        session.add(quiz)
+        session.commit()
+        session.refresh(quiz)
+
+        attempt = quiz.attempts[0]
+        review_card = attempt.review_cards[0]
+        review_card_id = review_card.id
+
+        assert review_card_id is not None
+        assert review_card.document_id == document.id
+        assert review_card.quiz_id == quiz.id
+        assert review_card.quiz_attempt_id == attempt.id
+        assert review_card.source_text is None
+        assert review_card.quiz_attempt is attempt
+
+        session.delete(attempt)
+        session.commit()
+
+        assert session.get(database.ReviewCard, review_card_id) is None
 
 
 def test_llm_request_log_relationships_persist_success_and_error_logs() -> None:

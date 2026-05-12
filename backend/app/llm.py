@@ -85,6 +85,17 @@ QUIZ_RESPONSE_SCHEMA: dict[str, Any] = {
     "required": ["quizzes"],
 }
 
+REVIEW_CARD_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "front": {"type": "string"},
+        "back": {"type": "string"},
+        "source_text": {"type": ["string", "null"]},
+    },
+    "required": ["front", "back", "source_text"],
+}
+
 
 class ExplanationRequest(BaseModel):
     selected_text: str = Field(min_length=1)
@@ -238,6 +249,69 @@ class QuizGenerationContent(BaseModel):
     quizzes: list[QuizContent] = Field(max_length=MAX_QUIZZES_PER_REQUEST)
 
 
+class ReviewCardGenerationRequest(BaseModel):
+    document_title: str | None = None
+    page_number: int = Field(ge=1)
+    quiz_type: str
+    question: str
+    correct_answer: str
+    user_answer: str
+    quiz_explanation: str
+    quiz_source_text: str
+
+    @field_validator("document_title")
+    @classmethod
+    def empty_document_title_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("quiz_type")
+    @classmethod
+    def quiz_type_must_be_allowed(cls, value: str) -> str:
+        stripped = value.strip()
+        if stripped not in ALLOWED_QUIZ_TYPES:
+            raise ValueError("unsupported quiz_type")
+        return stripped
+
+    @field_validator(
+        "question",
+        "correct_answer",
+        "user_answer",
+        "quiz_explanation",
+        "quiz_source_text",
+    )
+    @classmethod
+    def required_text_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("required text must not be blank")
+        return stripped
+
+
+class ReviewCardContent(BaseModel):
+    front: str
+    back: str
+    source_text: str | None = None
+
+    @field_validator("front", "back")
+    @classmethod
+    def required_text_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("required text must not be blank")
+        return stripped
+
+    @field_validator("source_text")
+    @classmethod
+    def empty_source_text_becomes_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
 class LLMUsageMetadata(BaseModel):
     provider: str
     model: str
@@ -262,6 +336,11 @@ class QuizGenerationResponse(BaseModel):
     usage: LLMUsageMetadata
 
 
+class ReviewCardGenerationResponse(BaseModel):
+    content: ReviewCardContent
+    usage: LLMUsageMetadata
+
+
 class LLMProvider(Protocol):
     def generate_explanation(self, request: ExplanationRequest) -> ExplanationResponse:
         pass
@@ -276,6 +355,12 @@ class LLMProvider(Protocol):
         self,
         request: QuizGenerationRequest,
     ) -> QuizGenerationResponse:
+        pass
+
+    def generate_review_card(
+        self,
+        request: ReviewCardGenerationRequest,
+    ) -> ReviewCardGenerationResponse:
         pass
 
 
@@ -387,17 +472,67 @@ class FakeLLMProvider:
             ),
         )
 
+    def generate_review_card(
+        self,
+        request: ReviewCardGenerationRequest,
+    ) -> ReviewCardGenerationResponse:
+        prompt_tokens = self._count_prompt_tokens(request)
+        content = ReviewCardContent(
+            front=f"Review this {request.quiz_type} question: {request.question}",
+            back=(
+                f"Correct answer: {request.correct_answer}\n"
+                f"Explanation: {request.quiz_explanation}"
+            ),
+            source_text=request.quiz_source_text,
+        )
+        completion_tokens = (
+            self._count_words(content.front)
+            + self._count_words(content.back)
+            + self._count_words(content.source_text or "")
+        )
+
+        return ReviewCardGenerationResponse(
+            content=content,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
     def _count_prompt_tokens(
         self,
-        request: ExplanationRequest | GlossaryExtractionRequest | QuizGenerationRequest,
+        request: (
+            ExplanationRequest
+            | GlossaryExtractionRequest
+            | QuizGenerationRequest
+            | ReviewCardGenerationRequest
+        ),
     ) -> int:
-        return sum(
-            self._count_words(value)
-            for value in (
+        if isinstance(request, ReviewCardGenerationRequest):
+            values = (
+                request.document_title,
+                str(request.page_number),
+                request.quiz_type,
+                request.question,
+                request.correct_answer,
+                request.user_answer,
+                request.quiz_explanation,
+                request.quiz_source_text,
+            )
+        else:
+            values = (
                 request.selected_text,
                 request.surrounding_context,
                 request.document_title,
             )
+
+        return sum(
+            self._count_words(value)
+            for value in values
             if value is not None
         )
 
@@ -523,6 +658,39 @@ class OpenAICompatibleLLMProvider:
             ),
         )
 
+    def generate_review_card(
+        self,
+        request: ReviewCardGenerationRequest,
+    ) -> ReviewCardGenerationResponse:
+        completion = self._client.chat.completions.create(
+            model=self.model,
+            messages=self._build_review_card_messages(request),
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "infodrip_review_card_generation",
+                    "strict": True,
+                    "schema": REVIEW_CARD_RESPONSE_SCHEMA,
+                },
+            },
+            temperature=0,
+        )
+        content = self._first_message_content(completion)
+        review_card = ReviewCardContent.model_validate_json(content)
+        prompt_tokens, completion_tokens, total_tokens = self._usage_tokens(completion)
+
+        return ReviewCardGenerationResponse(
+            content=review_card,
+            usage=LLMUsageMetadata(
+                provider=self.provider,
+                model=getattr(completion, "model", self.model) or self.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                estimated_cost=Decimal("0.000000"),
+            ),
+        )
+
     def _build_client(self, *, api_key: str, base_url: str | None) -> Any:
         from openai import OpenAI
 
@@ -620,6 +788,40 @@ class OpenAICompatibleLLMProvider:
                     "JSON with quizzes. Use only the selected text and same-page "
                     "surrounding context provided in this request. Do not include "
                     "markdown."
+                ),
+            },
+            {"role": "user", "content": "\n\n".join(user_parts)},
+        ]
+
+    def _build_review_card_messages(
+        self,
+        request: ReviewCardGenerationRequest,
+    ) -> list[dict[str, str]]:
+        user_parts = [
+            "Generate one review card for a wrong quiz attempt.",
+            f"Page number:\n{request.page_number}",
+            f"Quiz type:\n{request.quiz_type}",
+            f"Question:\n{request.question}",
+            f"User answer:\n{request.user_answer}",
+            f"Correct answer:\n{request.correct_answer}",
+            f"Quiz explanation:\n{request.quiz_explanation}",
+            f"Quiz source text:\n{request.quiz_source_text}",
+            (
+                "The front must be a self-contained review prompt. The back must "
+                "include the correct answer and a short explanation. For "
+                "source_text, return only a short supporting phrase when possible."
+            ),
+        ]
+        if request.document_title is not None:
+            user_parts.append(f"Document title:\n{request.document_title}")
+
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You are InfoDrip's review card generation task provider. "
+                    "Return only JSON with front, back, and source_text. Do not "
+                    "include markdown."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},

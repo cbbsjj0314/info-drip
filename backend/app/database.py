@@ -178,6 +178,33 @@ class QuizAttempt(Base):
     )
 
     quiz: Mapped[Quiz] = relationship(back_populates="attempts")
+    review_cards: Mapped[list["ReviewCard"]] = relationship(
+        back_populates="quiz_attempt",
+        cascade="all, delete-orphan",
+    )
+
+
+class ReviewCard(Base):
+    __tablename__ = "review_cards"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), index=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"), index=True)
+    quiz_attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("quiz_attempts.id"),
+        index=True,
+    )
+    front: Mapped[str] = mapped_column(Text)
+    back: Mapped[str] = mapped_column(Text)
+    source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str]
+    model: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    quiz_attempt: Mapped[QuizAttempt] = relationship(back_populates="review_cards")
 
 
 class LLMRequestLog(Base):

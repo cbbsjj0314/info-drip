@@ -25,6 +25,7 @@ from app.database import (
     LLMRequestLog,
     Quiz,
     QuizAttempt,
+    ReviewCard,
     engine,
     get_db_session,
 )
@@ -36,6 +37,7 @@ from app.llm import (
     LLMProvider,
     MAX_QUIZZES_PER_REQUEST,
     QuizGenerationRequest,
+    ReviewCardGenerationRequest,
     build_llm_provider_from_env,
 )
 
@@ -207,6 +209,21 @@ class ReviewAgainQuizAttemptResponse(BaseModel):
     page_number: int
 
 
+class ReviewCardResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    quiz_id: int
+    quiz_attempt_id: int
+    front: str
+    back: str
+    source_text: str | None
+    provider: str
+    model: str
+    created_at: datetime
+
+
 def get_upload_dir() -> Path:
     return Path(os.getenv(UPLOAD_DIR_ENV_VAR, DEFAULT_UPLOAD_DIR))
 
@@ -307,6 +324,24 @@ def build_quiz_request(
         document_title=document.title if document is not None else None,
         quiz_types=options.quiz_types,
         max_quizzes=options.max_quizzes,
+    )
+
+
+def build_review_card_request(
+    attempt: QuizAttempt,
+    quiz: Quiz,
+    highlight: Highlight,
+    document: Document,
+) -> ReviewCardGenerationRequest:
+    return ReviewCardGenerationRequest(
+        document_title=document.title,
+        page_number=highlight.page_number,
+        quiz_type=quiz.quiz_type,
+        question=quiz.question,
+        correct_answer=quiz.answer,
+        user_answer=attempt.user_answer,
+        quiz_explanation=quiz.explanation,
+        quiz_source_text=quiz.source_text,
     )
 
 
@@ -776,6 +811,111 @@ def list_review_again_quiz_attempts(
         review_again_attempt_to_response(attempt, quiz, highlight, document)
         for attempt, quiz, highlight, document in db.execute(statement).all()
     ]
+
+
+@app.post(
+    "/api/v1/quiz-attempts/{attempt_id}/review-cards",
+    response_model=ReviewCardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_quiz_attempt_review_card(
+    attempt_id: int,
+    db: Session = Depends(get_db_session),
+    provider: LLMProvider = Depends(get_llm_provider),
+) -> ReviewCard:
+    attempt = db.get(QuizAttempt, attempt_id)
+    if attempt is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz attempt not found.",
+        )
+    if attempt.is_correct is not False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Quiz attempt is not marked for review again.",
+        )
+
+    quiz = db.get(Quiz, attempt.quiz_id)
+    if quiz is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Review card generation failed.",
+        )
+    highlight = db.get(Highlight, quiz.highlight_id)
+    document = db.get(Document, quiz.document_id)
+    if highlight is None or document is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Review card generation failed.",
+        )
+
+    provider_name = getattr(provider, "provider", "unknown")
+    model_name = getattr(provider, "model", "unknown")
+    start_time = perf_counter()
+
+    try:
+        review_card_request = build_review_card_request(
+            attempt=attempt,
+            quiz=quiz,
+            highlight=highlight,
+            document=document,
+        )
+        llm_response = provider.generate_review_card(review_card_request)
+    except Exception as exc:
+        db.rollback()
+        db.add(
+            LLMRequestLog(
+                provider=provider_name,
+                model=model_name,
+                task_type="review_card_generation",
+                status="error",
+                latency_ms=now_latency_ms(start_time),
+                prompt_tokens=None,
+                completion_tokens=None,
+                total_tokens=None,
+                estimated_cost=None,
+                document_id=quiz.document_id,
+                highlight_id=quiz.highlight_id,
+                error_message=sanitize_provider_error_message(exc),
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Review card generation failed.",
+        ) from exc
+
+    review_card = ReviewCard(
+        document_id=quiz.document_id,
+        quiz_id=quiz.id,
+        quiz_attempt_id=attempt.id,
+        front=llm_response.content.front,
+        back=llm_response.content.back,
+        source_text=llm_response.content.source_text,
+        provider=llm_response.usage.provider,
+        model=llm_response.usage.model,
+    )
+    db.add(review_card)
+    db.add(
+        LLMRequestLog(
+            provider=llm_response.usage.provider,
+            model=llm_response.usage.model,
+            task_type="review_card_generation",
+            status="success",
+            latency_ms=now_latency_ms(start_time),
+            prompt_tokens=llm_response.usage.prompt_tokens,
+            completion_tokens=llm_response.usage.completion_tokens,
+            total_tokens=llm_response.usage.total_tokens,
+            estimated_cost=llm_response.usage.estimated_cost,
+            document_id=quiz.document_id,
+            highlight_id=quiz.highlight_id,
+            error_message=None,
+        )
+    )
+    db.commit()
+    db.refresh(review_card)
+
+    return review_card
 
 
 @app.get(
