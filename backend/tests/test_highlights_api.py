@@ -1,5 +1,7 @@
 from collections.abc import Generator
 from decimal import Decimal
+import json
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -16,11 +18,33 @@ from app.llm import (
     GlossaryExtractionRequest,
     GlossaryExtractionResponse,
     LLMUsageMetadata,
+    OpenAICompatibleLLMProvider,
     QuizGenerationContent,
     QuizGenerationRequest,
     QuizGenerationResponse,
 )
 from app.main import PAGE_CONTEXT_MAX_CHARS, app, get_llm_provider
+
+
+class CapturingChatCompletions:
+    def __init__(self, *, response_content: dict[str, object], usage: object) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._response_content = response_content
+        self._usage = usage
+
+    def create(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            model="provider-model",
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=json.dumps(self._response_content),
+                    ),
+                )
+            ],
+            usage=self._usage,
+        )
 
 
 def build_test_session() -> sessionmaker[Session]:
@@ -536,6 +560,65 @@ def test_create_highlight_explanation_logs_provider_failure() -> None:
             assert log.completion_tokens is None
             assert log.total_tokens is None
             assert log.estimated_cost is None
+            assert log.error_message == "Provider request failed."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_highlight_explanation_json_object_invalid_output_logs_error_only() -> None:
+    test_session = build_test_session()
+    document_id = create_document_with_pages(test_session, ["Page text."])
+    with test_session() as session:
+        highlight = database.Highlight(
+            document_id=document_id,
+            page_number=1,
+            selected_text="Sanitized selected text.",
+        )
+        session.add(highlight)
+        session.commit()
+        session.refresh(highlight)
+        highlight_id = highlight.id
+
+    chat_completions = CapturingChatCompletions(
+        response_content={"summary": "Missing required key points."},
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        ),
+    )
+
+    def provider_override() -> OpenAICompatibleLLMProvider:
+        return OpenAICompatibleLLMProvider(
+            api_key="test-api-key",
+            model="test-model",
+            response_format="json_object",
+            client=SimpleNamespace(
+                chat=SimpleNamespace(completions=chat_completions),
+            ),
+        )
+
+    override_app_db_session(test_session)
+    app.dependency_overrides[get_llm_provider] = provider_override
+
+    try:
+        client = TestClient(app)
+
+        response = client.post(f"/api/v1/highlights/{highlight_id}/explanations")
+
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Explanation generation failed."}
+        assert chat_completions.calls[0]["response_format"] == {"type": "json_object"}
+
+        with test_session() as session:
+            assert session.scalars(select(database.LLMExplanation)).all() == []
+            log = session.scalars(select(database.LLMRequestLog)).one()
+            assert log.document_id == document_id
+            assert log.highlight_id == highlight_id
+            assert log.provider == "openai-compatible"
+            assert log.model == "test-model"
+            assert log.task_type == "explanation"
+            assert log.status == "error"
             assert log.error_message == "Provider request failed."
     finally:
         app.dependency_overrides.clear()

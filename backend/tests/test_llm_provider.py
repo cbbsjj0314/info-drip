@@ -18,6 +18,9 @@ from app.llm import (
     LLMProviderConfigError,
     MAX_GLOSSARY_TERMS_PER_REQUEST,
     MAX_QUIZZES_PER_REQUEST,
+    OPENAI_RESPONSE_FORMAT_ENV_VAR,
+    OPENAI_RESPONSE_FORMAT_JSON_OBJECT,
+    OPENAI_RESPONSE_FORMAT_JSON_SCHEMA,
     OpenAICompatibleLLMProvider,
     QUIZ_RESPONSE_SCHEMA,
     QuizGenerationContent,
@@ -547,6 +550,63 @@ def test_openai_compatible_provider_validates_response_shape() -> None:
         provider.generate_explanation(ExplanationRequest(selected_text="concept"))
 
 
+def test_openai_compatible_provider_json_object_mode_uses_json_object_format() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "summary": "Normalized explanation.",
+            "key_points": ["First point."],
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=5,
+            completion_tokens=6,
+            total_tokens=11,
+        ),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        response_format="json_object",
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=chat_completions),
+        ),
+    )
+
+    response = provider.generate_explanation(
+        ExplanationRequest(selected_text="selected concept")
+    )
+
+    assert response.content.summary == "Normalized explanation."
+    call = chat_completions.calls[0]
+    assert call["response_format"] == {"type": "json_object"}
+    system_prompt = call["messages"][0]["content"]
+    assert "single JSON object" in system_prompt
+    assert "summary" in system_prompt
+    assert "key_points" in system_prompt
+    assert "test-api-key" not in json.dumps(call)
+
+
+def test_openai_compatible_provider_json_object_mode_still_validates_output() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={"summary": "Missing key points."},
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            total_tokens=2,
+        ),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        response_format="json_object",
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=chat_completions),
+        ),
+    )
+
+    with pytest.raises(ValidationError):
+        provider.generate_explanation(ExplanationRequest(selected_text="concept"))
+
+
 def test_openai_compatible_provider_generates_normalized_glossary_terms() -> None:
     chat_completions = CapturingChatCompletions(
         response_content={
@@ -615,6 +675,9 @@ def test_openai_compatible_provider_generates_normalized_glossary_terms() -> Non
     assert "Surrounding context:\nnearby context" in call["messages"][1]["content"]
     assert "Document title:\nSample Document" in call["messages"][1]["content"]
     assert "short phrase from the selected text" in call["messages"][1]["content"]
+    assert "top-level key terms" in call["messages"][1]["content"]
+    assert "term, definition, and source_text" in call["messages"][1]["content"]
+    assert "source_text is required and may be null" in call["messages"][1]["content"]
     assert "test-api-key" not in json.dumps(call)
 
 
@@ -757,6 +820,13 @@ def test_openai_compatible_provider_generates_normalized_quizzes() -> None:
         call["messages"][1]["content"]
     )
     assert "short phrase from the selected text" in call["messages"][1]["content"]
+    assert "top-level key quizzes" in call["messages"][1]["content"]
+    assert "quiz_type, question, answer, explanation, and source_text" in (
+        call["messages"][1]["content"]
+    )
+    assert "quiz_type must be short_answer or fill_blank" in (
+        call["messages"][1]["content"]
+    )
     assert "test-api-key" not in json.dumps(call)
 
 
@@ -946,6 +1016,33 @@ def test_build_llm_provider_from_env_selects_openai_compatible_provider() -> Non
     assert isinstance(provider, OpenAICompatibleLLMProvider)
     assert provider.provider == "openai-compatible"
     assert provider.model == "test-model"
+    assert provider.response_format == OPENAI_RESPONSE_FORMAT_JSON_SCHEMA
+
+
+def test_build_llm_provider_from_env_selects_json_object_response_format() -> None:
+    provider = build_llm_provider_from_env(
+        {
+            "INFODRIP_LLM_PROVIDER": "openai-compatible",
+            "INFODRIP_OPENAI_API_KEY": "test-api-key",
+            "INFODRIP_OPENAI_MODEL": "test-model",
+            OPENAI_RESPONSE_FORMAT_ENV_VAR: "  json_object  ",
+        }
+    )
+
+    assert isinstance(provider, OpenAICompatibleLLMProvider)
+    assert provider.response_format == OPENAI_RESPONSE_FORMAT_JSON_OBJECT
+
+
+def test_build_llm_provider_from_env_rejects_invalid_response_format() -> None:
+    with pytest.raises(LLMProviderConfigError, match=OPENAI_RESPONSE_FORMAT_ENV_VAR):
+        build_llm_provider_from_env(
+            {
+                "INFODRIP_LLM_PROVIDER": "openai-compatible",
+                "INFODRIP_OPENAI_API_KEY": "test-api-key",
+                "INFODRIP_OPENAI_MODEL": "test-model",
+                OPENAI_RESPONSE_FORMAT_ENV_VAR: "yaml",
+            }
+        )
 
 
 def test_build_llm_provider_from_env_requires_openai_api_key() -> None:

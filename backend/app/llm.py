@@ -8,8 +8,15 @@ LLM_PROVIDER_ENV_VAR = "INFODRIP_LLM_PROVIDER"
 OPENAI_API_KEY_ENV_VAR = "INFODRIP_OPENAI_API_KEY"
 OPENAI_BASE_URL_ENV_VAR = "INFODRIP_OPENAI_BASE_URL"
 OPENAI_MODEL_ENV_VAR = "INFODRIP_OPENAI_MODEL"
+OPENAI_RESPONSE_FORMAT_ENV_VAR = "INFODRIP_OPENAI_RESPONSE_FORMAT"
 FAKE_PROVIDER_NAME = "fake"
 OPENAI_COMPATIBLE_PROVIDER_NAME = "openai-compatible"
+OPENAI_RESPONSE_FORMAT_JSON_SCHEMA = "json_schema"
+OPENAI_RESPONSE_FORMAT_JSON_OBJECT = "json_object"
+OPENAI_RESPONSE_FORMATS = (
+    OPENAI_RESPONSE_FORMAT_JSON_SCHEMA,
+    OPENAI_RESPONSE_FORMAT_JSON_OBJECT,
+)
 MAX_GLOSSARY_TERMS_PER_REQUEST = 10
 SHORT_ANSWER_QUIZ_TYPE = "short_answer"
 FILL_BLANK_QUIZ_TYPE = "fill_blank"
@@ -654,6 +661,7 @@ class OpenAICompatibleLLMProvider:
         api_key: str,
         model: str,
         base_url: str | None = None,
+        response_format: str | None = None,
         client: Any | None = None,
     ) -> None:
         api_key = api_key.strip()
@@ -665,20 +673,17 @@ class OpenAICompatibleLLMProvider:
             raise LLMProviderConfigError(f"{OPENAI_MODEL_ENV_VAR} is required.")
 
         self.model = model
+        self.response_format = normalize_openai_response_format(response_format)
         self._client = client or self._build_client(api_key=api_key, base_url=base_url)
 
     def generate_explanation(self, request: ExplanationRequest) -> ExplanationResponse:
         completion = self._client.chat.completions.create(
             model=self.model,
             messages=self._build_messages(request),
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "infodrip_explanation",
-                    "strict": True,
-                    "schema": EXPLANATION_RESPONSE_SCHEMA,
-                },
-            },
+            response_format=self._response_format(
+                name="infodrip_explanation",
+                schema=EXPLANATION_RESPONSE_SCHEMA,
+            ),
             temperature=0,
         )
         content = self._first_message_content(completion)
@@ -704,14 +709,10 @@ class OpenAICompatibleLLMProvider:
         completion = self._client.chat.completions.create(
             model=self.model,
             messages=self._build_glossary_messages(request),
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "infodrip_glossary_extraction",
-                    "strict": True,
-                    "schema": GLOSSARY_RESPONSE_SCHEMA,
-                },
-            },
+            response_format=self._response_format(
+                name="infodrip_glossary_extraction",
+                schema=GLOSSARY_RESPONSE_SCHEMA,
+            ),
             temperature=0,
         )
         content = self._first_message_content(completion)
@@ -737,14 +738,10 @@ class OpenAICompatibleLLMProvider:
         completion = self._client.chat.completions.create(
             model=self.model,
             messages=self._build_quiz_messages(request),
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "infodrip_quiz_generation",
-                    "strict": True,
-                    "schema": QUIZ_RESPONSE_SCHEMA,
-                },
-            },
+            response_format=self._response_format(
+                name="infodrip_quiz_generation",
+                schema=QUIZ_RESPONSE_SCHEMA,
+            ),
             temperature=0,
         )
         content = self._first_message_content(completion)
@@ -770,14 +767,10 @@ class OpenAICompatibleLLMProvider:
         completion = self._client.chat.completions.create(
             model=self.model,
             messages=self._build_review_card_messages(request),
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "infodrip_review_card_generation",
-                    "strict": True,
-                    "schema": REVIEW_CARD_RESPONSE_SCHEMA,
-                },
-            },
+            response_format=self._response_format(
+                name="infodrip_review_card_generation",
+                schema=REVIEW_CARD_RESPONSE_SCHEMA,
+            ),
             temperature=0,
         )
         content = self._first_message_content(completion)
@@ -803,14 +796,10 @@ class OpenAICompatibleLLMProvider:
         completion = self._client.chat.completions.create(
             model=self.model,
             messages=self._build_question_answer_messages(request),
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "infodrip_question_answer",
-                    "strict": True,
-                    "schema": QUESTION_ANSWER_RESPONSE_SCHEMA,
-                },
-            },
+            response_format=self._response_format(
+                name="infodrip_question_answer",
+                schema=QUESTION_ANSWER_RESPONSE_SCHEMA,
+            ),
             temperature=0,
         )
         content = self._first_message_content(completion)
@@ -837,6 +826,19 @@ class OpenAICompatibleLLMProvider:
             kwargs["base_url"] = base_url
         return OpenAI(**kwargs)
 
+    def _response_format(self, *, name: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if self.response_format == OPENAI_RESPONSE_FORMAT_JSON_OBJECT:
+            return {"type": "json_object"}
+
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": name,
+                "strict": True,
+                "schema": schema,
+            },
+        }
+
     def _build_messages(self, request: ExplanationRequest) -> list[dict[str, str]]:
         user_parts = [
             "Explain this selected PDF passage for study.",
@@ -852,7 +854,8 @@ class OpenAICompatibleLLMProvider:
                 "role": "system",
                 "content": (
                     "You are InfoDrip's explanation task provider. Return only JSON "
-                    "with summary and key_points. Do not include markdown."
+                    "with summary and key_points. Return a single JSON object with "
+                    "exactly the expected keys. Do not include markdown."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
@@ -865,6 +868,11 @@ class OpenAICompatibleLLMProvider:
         user_parts = [
             "Extract glossary terms from this selected PDF passage for study.",
             f"Selected text:\n{request.selected_text}",
+            (
+                "Return a JSON object with top-level key terms. Each terms item "
+                "must include term, definition, and source_text. source_text is "
+                "required and may be null."
+            ),
             (
                 "For source_text, return only a short phrase from the selected text "
                 "that supports the term. Do not return full page context or long "
@@ -882,7 +890,8 @@ class OpenAICompatibleLLMProvider:
                 "role": "system",
                 "content": (
                     "You are InfoDrip's glossary extraction task provider. Return "
-                    "only JSON with terms. Do not include markdown."
+                    "only JSON with terms. Return a single JSON object with exactly "
+                    "the expected keys. Do not include markdown."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
@@ -896,6 +905,11 @@ class OpenAICompatibleLLMProvider:
             "Generate study quizzes from this selected PDF passage.",
             f"Selected text:\n{request.selected_text}",
             f"Allowed quiz types:\n{', '.join(request.quiz_types)}",
+            (
+                "Return a JSON object with top-level key quizzes. Each quizzes "
+                "item must include quiz_type, question, answer, explanation, "
+                "and source_text. quiz_type must be short_answer or fill_blank."
+            ),
             f"Return at most {request.max_quizzes} quizzes.",
             (
                 "If the selected text is too short or lacks enough distinct "
@@ -925,7 +939,8 @@ class OpenAICompatibleLLMProvider:
                     "You are InfoDrip's quiz generation task provider. Return only "
                     "JSON with quizzes. Use only the selected text and same-page "
                     "surrounding context provided in this request. Do not include "
-                    "markdown."
+                    "markdown. Return a single JSON object with exactly the "
+                    "expected keys."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
@@ -959,7 +974,8 @@ class OpenAICompatibleLLMProvider:
                 "content": (
                     "You are InfoDrip's review card generation task provider. "
                     "Return only JSON with front, back, and source_text. Do not "
-                    "include markdown."
+                    "include markdown. Return a single JSON object with exactly "
+                    "the expected keys."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
@@ -1000,7 +1016,8 @@ class OpenAICompatibleLLMProvider:
                     "only JSON with answer, evidence_text, document_based, and "
                     "needs_more_context. Do not include markdown. Keep document "
                     "claims grounded in the provided selected text and same-page "
-                    "context."
+                    "context. Return a single JSON object with exactly the "
+                    "expected keys."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
@@ -1043,6 +1060,7 @@ def build_llm_provider_from_env(environ: Mapping[str, str] | None = None) -> LLM
             api_key=required_env_value(env, OPENAI_API_KEY_ENV_VAR),
             model=required_env_value(env, OPENAI_MODEL_ENV_VAR),
             base_url=env.get(OPENAI_BASE_URL_ENV_VAR),
+            response_format=env.get(OPENAI_RESPONSE_FORMAT_ENV_VAR),
         )
 
     raise LLMProviderConfigError(f"Unsupported LLM provider: {provider_name}")
@@ -1058,6 +1076,18 @@ def required_env_value(env: Mapping[str, str], name: str) -> str:
     if value is None:
         raise LLMProviderConfigError(f"{name} is required.")
     return value
+
+
+def normalize_openai_response_format(value: str | None) -> str:
+    normalized = normalize_optional_env_value(value)
+    if normalized is None:
+        return OPENAI_RESPONSE_FORMAT_JSON_SCHEMA
+    if normalized not in OPENAI_RESPONSE_FORMATS:
+        allowed = ", ".join(OPENAI_RESPONSE_FORMATS)
+        raise LLMProviderConfigError(
+            f"{OPENAI_RESPONSE_FORMAT_ENV_VAR} must be one of: {allowed}."
+        )
+    return normalized
 
 
 def normalize_optional_env_value(value: str | None) -> str | None:
