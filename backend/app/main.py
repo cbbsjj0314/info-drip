@@ -100,6 +100,17 @@ class LLMExplanationResponse(BaseModel):
     created_at: datetime
 
 
+class StudyRecordExplanationResponse(BaseModel):
+    id: int
+    document_id: int
+    highlight_id: int
+    summary: str
+    key_points: list[str]
+    provider: str
+    model: str
+    created_at: datetime
+
+
 class GlossaryTermResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -250,6 +261,16 @@ class ReviewCardResponse(BaseModel):
     provider: str
     model: str
     created_at: datetime
+
+
+class DocumentStudyRecordResponse(BaseModel):
+    document: DocumentResponse
+    highlights: list[HighlightResponse]
+    explanations: list[StudyRecordExplanationResponse]
+    glossary_terms: list[GlossaryTermResponse]
+    user_questions: list[UserQuestionResponse]
+    quizzes: list[QuizResponse]
+    quiz_attempts: list[QuizAttemptResponse]
 
 
 def get_upload_dir() -> Path:
@@ -406,6 +427,21 @@ def explanation_to_response(explanation: LLMExplanation) -> LLMExplanationRespon
     )
 
 
+def study_record_explanation_to_response(
+    explanation: LLMExplanation,
+) -> StudyRecordExplanationResponse:
+    return StudyRecordExplanationResponse(
+        id=explanation.id,
+        document_id=explanation.document_id,
+        highlight_id=explanation.highlight_id,
+        summary=explanation.summary,
+        key_points=list(json.loads(explanation.key_points)),
+        provider=explanation.provider,
+        model=explanation.model,
+        created_at=explanation.created_at,
+    )
+
+
 def review_again_attempt_to_response(
     attempt: QuizAttempt,
     quiz: Quiz,
@@ -545,6 +581,79 @@ def list_document_highlights(
             .where(Highlight.document_id == document_id)
             .order_by(Highlight.page_number, Highlight.id)
         )
+    )
+
+
+@app.get(
+    "/api/v1/documents/{document_id}/study-records",
+    response_model=DocumentStudyRecordResponse,
+)
+def get_document_study_records(
+    document_id: int,
+    db: Session = Depends(get_db_session),
+) -> DocumentStudyRecordResponse:
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    highlights = list(
+        db.scalars(
+            select(Highlight)
+            .where(Highlight.document_id == document_id)
+            .order_by(Highlight.page_number, Highlight.id)
+        )
+    )
+    explanations = list(
+        db.scalars(
+            select(LLMExplanation)
+            .where(LLMExplanation.document_id == document_id)
+            .order_by(LLMExplanation.created_at.desc(), LLMExplanation.id.desc())
+        )
+    )
+    glossary_terms = list(
+        db.scalars(
+            select(GlossaryTerm)
+            .where(GlossaryTerm.document_id == document_id)
+            .order_by(GlossaryTerm.created_at.desc(), GlossaryTerm.id.desc())
+        )
+    )
+    user_questions = list(
+        db.scalars(
+            select(UserQuestion)
+            .where(UserQuestion.document_id == document_id)
+            .order_by(UserQuestion.created_at.desc(), UserQuestion.id.desc())
+        )
+    )
+    quizzes = list(
+        db.scalars(
+            select(Quiz)
+            .where(Quiz.document_id == document_id)
+            .order_by(Quiz.created_at.desc(), Quiz.id.desc())
+        )
+    )
+    quiz_attempts = list(
+        db.scalars(
+            select(QuizAttempt)
+            .join(Quiz, QuizAttempt.quiz_id == Quiz.id)
+            .where(Quiz.document_id == document_id)
+            .order_by(QuizAttempt.created_at.desc(), QuizAttempt.id.desc())
+        )
+    )
+
+    return DocumentStudyRecordResponse(
+        document=DocumentResponse.model_validate(document),
+        highlights=highlights,
+        explanations=[
+            study_record_explanation_to_response(explanation)
+            for explanation in explanations
+        ],
+        glossary_terms=glossary_terms,
+        user_questions=user_questions,
+        quizzes=quizzes,
+        quiz_attempts=quiz_attempts,
     )
 
 
