@@ -23,6 +23,13 @@ FILL_BLANK_QUIZ_TYPE = "fill_blank"
 ALLOWED_QUIZ_TYPES = (SHORT_ANSWER_QUIZ_TYPE, FILL_BLANK_QUIZ_TYPE)
 DEFAULT_QUIZZES_PER_REQUEST = 2
 MAX_QUIZZES_PER_REQUEST = 10
+KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION = (
+    "For natural-language JSON values such as summary, key_points, definition, "
+    "answer, question, and explanation, write Korean by default. Keep proper "
+    "nouns, code, identifiers, and English technical terms from the source text "
+    "in English when needed. Never translate JSON field names; use the existing "
+    "schema keys exactly."
+)
 
 EXPLANATION_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -855,7 +862,8 @@ class OpenAICompatibleLLMProvider:
                 "content": (
                     "You are InfoDrip's explanation task provider. Return only JSON "
                     "with summary and key_points. Return a single JSON object with "
-                    "exactly the expected keys. Do not include markdown."
+                    "exactly the expected keys. Do not include markdown. "
+                    f"{KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION}"
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
@@ -872,6 +880,11 @@ class OpenAICompatibleLLMProvider:
                 "Return a JSON object with top-level key terms. Each terms item "
                 "must include term, definition, and source_text. source_text is "
                 "required and may be null."
+            ),
+            (
+                f"{KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION} For glossary "
+                "terms, keep term in English when the source term is English; write "
+                "definition in Korean by default."
             ),
             (
                 "For source_text, return only a short phrase from the selected text "
@@ -909,6 +922,11 @@ class OpenAICompatibleLLMProvider:
                 "Return a JSON object with top-level key quizzes. Each quizzes "
                 "item must include quiz_type, question, answer, explanation, "
                 "and source_text. quiz_type must be short_answer or fill_blank."
+            ),
+            (
+                f"{KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION} quiz_type "
+                "values must remain exactly short_answer or fill_blank. Do not "
+                "translate quiz_type values to Korean labels such as 단답형 or 빈칸."
             ),
             f"Return at most {request.max_quizzes} quizzes.",
             (
@@ -1000,6 +1018,12 @@ class OpenAICompatibleLLMProvider:
                 "the selected text or same-page context. Do not return full page "
                 "context or long surrounding passages."
             ),
+            (
+                "Write answer as plain text. Do not use markdown formatting inside "
+                "JSON string values, including **bold**, headings, bullet lists, "
+                "numbered markdown lists, or code fences."
+            ),
+            KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION,
         ]
         if request.surrounding_context is not None:
             user_parts.append(

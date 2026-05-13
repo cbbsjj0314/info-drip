@@ -22,7 +22,9 @@ from app.llm import (
     OPENAI_RESPONSE_FORMAT_JSON_OBJECT,
     OPENAI_RESPONSE_FORMAT_JSON_SCHEMA,
     OpenAICompatibleLLMProvider,
+    QUESTION_ANSWER_RESPONSE_SCHEMA,
     QUIZ_RESPONSE_SCHEMA,
+    QuestionAnswerRequest,
     QuizGenerationContent,
     QuizGenerationRequest,
     REVIEW_CARD_RESPONSE_SCHEMA,
@@ -523,6 +525,10 @@ def test_openai_compatible_provider_generates_normalized_explanation() -> None:
     }
     assert call["messages"][0]["role"] == "system"
     assert call["messages"][1]["role"] == "user"
+    system_prompt = call["messages"][0]["content"]
+    assert "natural-language JSON values" in system_prompt
+    assert "write Korean by default" in system_prompt
+    assert "Never translate JSON field names" in system_prompt
     assert "Selected text:\nselected concept" in call["messages"][1]["content"]
     assert "Surrounding context:\nnearby context" in call["messages"][1]["content"]
     assert "Document title:\nSample Document" in call["messages"][1]["content"]
@@ -671,13 +677,19 @@ def test_openai_compatible_provider_generates_normalized_glossary_terms() -> Non
     assert schema_source_text == {"type": ["string", "null"]}
     assert call["messages"][0]["role"] == "system"
     assert call["messages"][1]["role"] == "user"
-    assert "Selected text:\nselected concept" in call["messages"][1]["content"]
-    assert "Surrounding context:\nnearby context" in call["messages"][1]["content"]
-    assert "Document title:\nSample Document" in call["messages"][1]["content"]
-    assert "short phrase from the selected text" in call["messages"][1]["content"]
-    assert "top-level key terms" in call["messages"][1]["content"]
-    assert "term, definition, and source_text" in call["messages"][1]["content"]
-    assert "source_text is required and may be null" in call["messages"][1]["content"]
+    user_prompt = call["messages"][1]["content"]
+    assert "Selected text:\nselected concept" in user_prompt
+    assert "Surrounding context:\nnearby context" in user_prompt
+    assert "Document title:\nSample Document" in user_prompt
+    assert "short phrase from the selected text" in user_prompt
+    assert "top-level key terms" in user_prompt
+    assert "term, definition, and source_text" in user_prompt
+    assert "source_text is required and may be null" in user_prompt
+    assert "natural-language JSON values" in user_prompt
+    assert "write Korean by default" in user_prompt
+    assert "Never translate JSON field names" in user_prompt
+    assert "keep term in English when the source term is English" in user_prompt
+    assert "write definition in Korean by default" in user_prompt
     assert "test-api-key" not in json.dumps(call)
 
 
@@ -809,24 +821,29 @@ def test_openai_compatible_provider_generates_normalized_quizzes() -> None:
     assert schema_quiz["properties"]["quiz_type"]["enum"] == list(ALLOWED_QUIZ_TYPES)
     assert call["messages"][0]["role"] == "system"
     assert call["messages"][1]["role"] == "user"
-    assert "Selected text:\nselected concept" in call["messages"][1]["content"]
+    user_prompt = call["messages"][1]["content"]
+    assert "Selected text:\nselected concept" in user_prompt
     assert "Same-page surrounding context:\nnearby context" in (
-        call["messages"][1]["content"]
+        user_prompt
     )
-    assert "Document title:\nSample Document" in call["messages"][1]["content"]
-    assert "Return at most 1 quizzes." in call["messages"][1]["content"]
-    assert "return fewer quizzes" in call["messages"][1]["content"]
-    assert "Distribute quiz types as evenly as possible" in (
-        call["messages"][1]["content"]
-    )
-    assert "short phrase from the selected text" in call["messages"][1]["content"]
-    assert "top-level key quizzes" in call["messages"][1]["content"]
+    assert "Document title:\nSample Document" in user_prompt
+    assert "Return at most 1 quizzes." in user_prompt
+    assert "return fewer quizzes" in user_prompt
+    assert "Distribute quiz types as evenly as possible" in user_prompt
+    assert "short phrase from the selected text" in user_prompt
+    assert "top-level key quizzes" in user_prompt
     assert "quiz_type, question, answer, explanation, and source_text" in (
-        call["messages"][1]["content"]
+        user_prompt
     )
-    assert "quiz_type must be short_answer or fill_blank" in (
-        call["messages"][1]["content"]
+    assert "quiz_type must be short_answer or fill_blank" in user_prompt
+    assert "natural-language JSON values" in user_prompt
+    assert "write Korean by default" in user_prompt
+    assert "Never translate JSON field names" in user_prompt
+    assert "quiz_type values must remain exactly short_answer or fill_blank" in (
+        user_prompt
     )
+    assert "Do not translate quiz_type values to Korean labels" in user_prompt
+    assert "단답형 or 빈칸" in user_prompt
     assert "test-api-key" not in json.dumps(call)
 
 
@@ -859,6 +876,71 @@ def test_openai_compatible_provider_validates_quiz_response_shape() -> None:
 
     with pytest.raises(ValidationError):
         provider.generate_quizzes(QuizGenerationRequest(selected_text="concept"))
+
+
+def test_openai_compatible_provider_question_answer_prompt_prefers_korean_values() -> None:
+    chat_completions = CapturingChatCompletions(
+        response_content={
+            "answer": "Normalized answer.",
+            "evidence_text": "selected concept",
+            "document_based": True,
+            "needs_more_context": False,
+        },
+        usage=SimpleNamespace(
+            prompt_tokens=11,
+            completion_tokens=9,
+            total_tokens=20,
+        ),
+    )
+    provider = OpenAICompatibleLLMProvider(
+        api_key="test-api-key",
+        model="test-model",
+        client=SimpleNamespace(
+            chat=SimpleNamespace(completions=chat_completions),
+        ),
+    )
+
+    response = provider.answer_question(
+        QuestionAnswerRequest(
+            selected_text="selected concept",
+            question="What does this mean?",
+            surrounding_context="nearby context",
+            document_title="Sample Document",
+        )
+    )
+
+    assert response.content.answer == "Normalized answer."
+    assert response.content.evidence_text == "selected concept"
+    assert response.content.document_based is True
+    assert response.content.needs_more_context is False
+
+    assert len(chat_completions.calls) == 1
+    call = chat_completions.calls[0]
+    assert call["model"] == "test-model"
+    assert call["temperature"] == 0
+    assert call["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "infodrip_question_answer",
+            "strict": True,
+            "schema": QUESTION_ANSWER_RESPONSE_SCHEMA,
+        },
+    }
+    assert call["messages"][0]["role"] == "system"
+    assert call["messages"][1]["role"] == "user"
+    user_prompt = call["messages"][1]["content"]
+    assert "Selected text:\nselected concept" in user_prompt
+    assert "User question:\nWhat does this mean?" in user_prompt
+    assert "Same-page surrounding context:\nnearby context" in user_prompt
+    assert "Document title:\nSample Document" in user_prompt
+    assert "natural-language JSON values" in user_prompt
+    assert "write Korean by default" in user_prompt
+    assert "Never translate JSON field names" in user_prompt
+    assert "Write answer as plain text" in user_prompt
+    assert "Do not use markdown formatting inside JSON string values" in user_prompt
+    assert "**bold**" in user_prompt
+    assert "code fences" in user_prompt
+    assert "test-api-key" not in json.dumps(call)
 
 
 def test_openai_compatible_provider_generates_normalized_review_card() -> None:
