@@ -231,6 +231,7 @@ struct DocumentStudyRecordSheet: View {
     let onLoad: (Int) async throws -> BackendDocumentStudyRecord
     @Environment(\.dismiss) private var dismiss
     @State private var state: StudyRecordLoadState = .idle
+    @State private var selectedFilter: StudyRecordFilter = .all
 
     var body: some View {
         NavigationStack {
@@ -308,11 +309,14 @@ struct DocumentStudyRecordSheet: View {
             LazyVStack(alignment: .leading, spacing: 16) {
                 documentHeader(record.document)
                 countSummary(record)
+                filterControl
 
                 if isEmpty(record) {
                     emptyState
+                } else if isEmpty(record, for: selectedFilter) {
+                    filteredEmptyState
                 } else {
-                    studyRecordSections(record)
+                    studyRecordSections(record, filter: selectedFilter)
                 }
             }
             .padding(24)
@@ -364,6 +368,33 @@ struct DocumentStudyRecordSheet: View {
     }
 
     @ViewBuilder
+    private var filterControl: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(StudyRecordFilter.allCases) { filter in
+                    Button {
+                        selectedFilter = filter
+                    } label: {
+                        Text(filter.title)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(selectedFilter == filter ? Color.white : Color.primary)
+                            .background(
+                                selectedFilter == filter
+                                ? Color.accentColor
+                                : Color(.secondarySystemGroupedBackground),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    @ViewBuilder
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "tray")
@@ -382,50 +413,109 @@ struct DocumentStudyRecordSheet: View {
     }
 
     @ViewBuilder
-    private func studyRecordSections(_ record: BackendDocumentStudyRecord) -> some View {
-        if !record.highlights.isEmpty {
-            StudyRecordSection(title: "하이라이트", count: record.highlights.count) {
-                ForEach(record.highlights, id: \.id) { highlight in
+    private var filteredEmptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("표시할 학습 기록이 없습니다.")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+
+    @ViewBuilder
+    private func studyRecordSections(_ record: BackendDocumentStudyRecord, filter: StudyRecordFilter) -> some View {
+        switch filter {
+        case .all:
+            allStudyRecordSections(record)
+        case .highlights:
+            highlightSection(record.highlights)
+        case .explanations:
+            explanationSection(record.explanations)
+        case .glossary:
+            glossarySection(record.glossaryTerms)
+        case .questions:
+            questionSection(record.userQuestions)
+        case .quizzes:
+            quizSection(record.quizzes)
+        case .wrongAnswers:
+            quizAttemptSection(wrongQuizAttempts(in: record), title: "오답")
+        }
+    }
+
+    @ViewBuilder
+    private func allStudyRecordSections(_ record: BackendDocumentStudyRecord) -> some View {
+        highlightSection(record.highlights)
+        explanationSection(record.explanations)
+        glossarySection(record.glossaryTerms)
+        questionSection(record.userQuestions)
+        quizSection(record.quizzes)
+        quizAttemptSection(record.quizAttempts, title: "풀이 기록")
+    }
+
+    @ViewBuilder
+    private func highlightSection(_ highlights: [BackendHighlight]) -> some View {
+        if !highlights.isEmpty {
+            StudyRecordSection(title: "하이라이트", count: highlights.count) {
+                ForEach(highlights, id: \.id) { highlight in
                     StudyRecordHighlightCard(highlight: highlight)
                 }
             }
         }
+    }
 
-        if !record.explanations.isEmpty {
-            StudyRecordSection(title: "설명", count: record.explanations.count) {
-                ForEach(record.explanations, id: \.id) { explanation in
+    @ViewBuilder
+    private func explanationSection(_ explanations: [BackendStudyRecordExplanation]) -> some View {
+        if !explanations.isEmpty {
+            StudyRecordSection(title: "설명", count: explanations.count) {
+                ForEach(explanations, id: \.id) { explanation in
                     StudyRecordExplanationCard(explanation: explanation)
                 }
             }
         }
+    }
 
-        if !record.glossaryTerms.isEmpty {
-            StudyRecordSection(title: "용어", count: record.glossaryTerms.count) {
-                ForEach(record.glossaryTerms, id: \.id) { glossaryTerm in
+    @ViewBuilder
+    private func glossarySection(_ glossaryTerms: [BackendGlossaryTerm]) -> some View {
+        if !glossaryTerms.isEmpty {
+            StudyRecordSection(title: "용어", count: glossaryTerms.count) {
+                ForEach(glossaryTerms, id: \.id) { glossaryTerm in
                     StudyRecordGlossaryTermCard(glossaryTerm: glossaryTerm)
                 }
             }
         }
+    }
 
-        if !record.userQuestions.isEmpty {
-            StudyRecordSection(title: "질문", count: record.userQuestions.count) {
-                ForEach(record.userQuestions, id: \.id) { userQuestion in
+    @ViewBuilder
+    private func questionSection(_ userQuestions: [BackendUserQuestion]) -> some View {
+        if !userQuestions.isEmpty {
+            StudyRecordSection(title: "질문", count: userQuestions.count) {
+                ForEach(userQuestions, id: \.id) { userQuestion in
                     StudyRecordUserQuestionCard(userQuestion: userQuestion)
                 }
             }
         }
+    }
 
-        if !record.quizzes.isEmpty {
-            StudyRecordSection(title: "퀴즈", count: record.quizzes.count) {
-                ForEach(record.quizzes, id: \.id) { quiz in
+    @ViewBuilder
+    private func quizSection(_ quizzes: [BackendQuiz]) -> some View {
+        if !quizzes.isEmpty {
+            StudyRecordSection(title: "퀴즈", count: quizzes.count) {
+                ForEach(quizzes, id: \.id) { quiz in
                     StudyRecordQuizCard(quiz: quiz)
                 }
             }
         }
+    }
 
-        if !record.quizAttempts.isEmpty {
-            StudyRecordSection(title: "풀이 기록", count: record.quizAttempts.count) {
-                ForEach(record.quizAttempts, id: \.id) { attempt in
+    @ViewBuilder
+    private func quizAttemptSection(_ quizAttempts: [BackendQuizAttempt], title: String) -> some View {
+        if !quizAttempts.isEmpty {
+            StudyRecordSection(title: title, count: quizAttempts.count) {
+                ForEach(quizAttempts, id: \.id) { attempt in
                     StudyRecordQuizAttemptCard(attempt: attempt)
                 }
             }
@@ -441,6 +531,29 @@ struct DocumentStudyRecordSheet: View {
             && record.quizAttempts.isEmpty
     }
 
+    private func isEmpty(_ record: BackendDocumentStudyRecord, for filter: StudyRecordFilter) -> Bool {
+        switch filter {
+        case .all:
+            return isEmpty(record)
+        case .highlights:
+            return record.highlights.isEmpty
+        case .explanations:
+            return record.explanations.isEmpty
+        case .glossary:
+            return record.glossaryTerms.isEmpty
+        case .questions:
+            return record.userQuestions.isEmpty
+        case .quizzes:
+            return record.quizzes.isEmpty
+        case .wrongAnswers:
+            return wrongQuizAttempts(in: record).isEmpty
+        }
+    }
+
+    private func wrongQuizAttempts(in record: BackendDocumentStudyRecord) -> [BackendQuizAttempt] {
+        record.quizAttempts.filter { $0.isCorrect == .some(false) }
+    }
+
     private func load() async {
         state = .loading
 
@@ -449,6 +562,37 @@ struct DocumentStudyRecordSheet: View {
             state = .loaded(record)
         } catch {
             state = .failed(error.localizedDescription)
+        }
+    }
+}
+
+private enum StudyRecordFilter: String, CaseIterable, Identifiable {
+    case all
+    case highlights
+    case explanations
+    case glossary
+    case questions
+    case quizzes
+    case wrongAnswers
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all:
+            return "전체"
+        case .highlights:
+            return "하이라이트"
+        case .explanations:
+            return "설명"
+        case .glossary:
+            return "용어"
+        case .questions:
+            return "질문"
+        case .quizzes:
+            return "퀴즈"
+        case .wrongAnswers:
+            return "오답"
         }
     }
 }
