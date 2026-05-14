@@ -48,6 +48,7 @@ struct ReaderWorkspace: View {
                                 questionState: questionState,
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canRunQuickAction: canRunQuickAction,
+                                selectedText: selection.text,
                                 onSelect: handleQuickAction,
                                 onRequestExplanation: handleExplanationRequest,
                                 onRequestGlossary: handleGlossaryRequest,
