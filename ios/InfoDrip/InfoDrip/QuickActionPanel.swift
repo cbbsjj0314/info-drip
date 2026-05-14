@@ -13,6 +13,7 @@ struct QuickActionPanel: View {
     let questionState: QuestionState
     let highlightAvailabilityMessage: String?
     let canRunQuickAction: Bool
+    let selectedText: String
     let onSelect: (QuickAction) -> Void
     let onRequestExplanation: () -> Void
     let onRequestGlossary: () -> Void
@@ -315,33 +316,44 @@ struct QuickActionPanel: View {
 
     @ViewBuilder
     private func quizActionRow(quizzes: [BackendQuiz]) -> some View {
-        HStack(spacing: 8) {
-            if !quizzes.isEmpty {
-                Button {
-                    onOpenQuizStudy(quizzes)
-                } label: {
-                    Label("퀴즈 풀기", systemImage: "rectangle.stack.badge.play")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if !quizzes.isEmpty {
+                    Button {
+                        onOpenQuizStudy(quizzes)
+                    } label: {
+                        Label("퀴즈 풀기", systemImage: "rectangle.stack.badge.play")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                } else {
+                    Button {
+                        onRequestQuiz()
+                    } label: {
+                        Label("퀴즈 생성", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(!canRunQuickAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-            } else {
-                Button {
-                    onRequestQuiz()
-                } label: {
-                    Label("퀴즈 생성", systemImage: "sparkles")
+
+                if !availableQuizCountOptions.isEmpty {
+                    studyQuizMenu
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .disabled(!canRunQuickAction)
             }
 
-            studyQuizMenu
+            if availableQuizCountOptions.isEmpty {
+                Text("짧은 선택에서는 기본 2문제로 생성합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
     private var studyQuizMenu: some View {
         Menu {
-            ForEach([4, 6, 10], id: \.self) { count in
+            ForEach(availableQuizCountOptions, id: \.self) { count in
                 Button("\(count)문제") {
                     onStudyQuiz(count)
                 }
@@ -352,6 +364,40 @@ struct QuickActionPanel: View {
         .buttonStyle(.bordered)
         .controlSize(.regular)
         .disabled(!canRunQuickAction)
+    }
+
+    private var availableQuizCountOptions: [Int] {
+        switch selectedTextQuizLength {
+        case .short:
+            return []
+        case .medium:
+            return [4]
+        case .long:
+            return [4, 6]
+        case .veryLong:
+            return [4, 6, 10]
+        }
+    }
+
+    private var selectedTextQuizLength: QuizSelectionLength {
+        let trimmedText = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let characterCount = trimmedText.count
+        let wordishCount = trimmedText.split(whereSeparator: { $0.isWhitespace }).count
+
+        // UI-only guardrail: short passages rarely support many useful quizzes and add avoidable wait time.
+        if characterCount <= 160 {
+            return .short
+        }
+
+        if characterCount <= 420 || (characterCount <= 520 && wordishCount <= 70) {
+            return .medium
+        }
+
+        if characterCount <= 900 || (characterCount <= 1_100 && wordishCount <= 150) {
+            return .long
+        }
+
+        return .veryLong
     }
 
     @ViewBuilder
@@ -589,6 +635,13 @@ private struct LoadedResultPreviewModifier: ViewModifier {
         .padding(12)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
     }
+}
+
+private enum QuizSelectionLength {
+    case short
+    case medium
+    case long
+    case veryLong
 }
 
 enum QuickAction: String, CaseIterable, Identifiable {
