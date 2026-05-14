@@ -26,6 +26,7 @@ struct ReaderWorkspace: View {
     @State private var activeQuickActionSheet: QuickActionSheet?
     @State private var selection = PDFTextSelection.empty
     @State private var selectedQuickAction: QuickAction?
+    @State private var isQuickActionPanelDismissed = false
 
     var body: some View {
         Group {
@@ -38,7 +39,7 @@ struct ReaderWorkspace: View {
                     .ignoresSafeArea(edges: .bottom)
                     .navigationTitle(document.title)
                     .overlay(alignment: .bottom) {
-                        if !selection.isEmpty {
+                        if !selection.isEmpty && !isQuickActionPanelDismissed {
                             QuickActionPanel(
                                 selectedAction: selectedQuickAction,
                                 highlightSaveState: highlightSaveState,
@@ -58,7 +59,8 @@ struct ReaderWorkspace: View {
                                 onOpenExplanationDetail: openExplanationDetail,
                                 onOpenGlossaryDetail: openGlossaryDetail,
                                 onOpenQuizStudy: openQuizStudy,
-                                onOpenQuestionDetail: openQuestionDetail
+                                onOpenQuestionDetail: openQuestionDetail,
+                                onClose: closeQuickActionPanel
                             )
                             .padding(.horizontal, 24)
                             .padding(.bottom, 20)
@@ -66,13 +68,16 @@ struct ReaderWorkspace: View {
                         }
                     }
                     .animation(.easeInOut(duration: 0.2), value: selection.isEmpty)
+                    .animation(.easeInOut(duration: 0.2), value: isQuickActionPanelDismissed)
                     .onChange(of: selection) { _ in
                         selectedQuickAction = nil
+                        isQuickActionPanelDismissed = false
                         onClearHighlightState()
                     }
                     .onChange(of: document.id) { _ in
                         selection = .empty
                         selectedQuickAction = nil
+                        isQuickActionPanelDismissed = false
                         onClearHighlightState()
                     }
                     .toolbar {
@@ -237,6 +242,11 @@ struct ReaderWorkspace: View {
     private func handleStudyQuiz(maxQuizzes: Int) {
         selectedQuickAction = .quiz
         onStudyQuiz(selection, maxQuizzes)
+    }
+
+    private func closeQuickActionPanel() {
+        selectedQuickAction = nil
+        isQuickActionPanelDismissed = true
     }
 
     private func openReviewAgainList() {
