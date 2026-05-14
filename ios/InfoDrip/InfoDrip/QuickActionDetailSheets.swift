@@ -38,9 +38,6 @@ struct ExplanationDetailSheet: View {
                         }
                     }
 
-                    Text("\(explanation.provider) · \(explanation.model)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -102,9 +99,6 @@ struct GlossaryDetailSheet: View {
                                     }
                                 }
 
-                                Text("\(glossaryTerm.provider) · \(glossaryTerm.model)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
                             }
                             .padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -192,12 +186,9 @@ struct QuestionDetailSheet: View {
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(userQuestion.provider) · \(userQuestion.model)")
-                        Text(userQuestion.createdAt)
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    Text(userQuestion.createdAt)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -674,9 +665,6 @@ private struct StudyRecordExplanationCard: View {
                 }
             }
 
-            Text("\(explanation.provider) · \(explanation.model)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
     }
 }
@@ -693,9 +681,6 @@ private struct StudyRecordGlossaryTermCard: View {
                 bodySection(title: "근거", text: sourceText, lineLimit: 4)
             }
 
-            Text("\(glossaryTerm.provider) · \(glossaryTerm.model)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
     }
 }
@@ -713,9 +698,6 @@ private struct StudyRecordUserQuestionCard: View {
                 bodySection(title: "근거", text: evidenceText, lineLimit: 4)
             }
 
-            Text("\(userQuestion.provider) · \(userQuestion.model)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
     }
 }
@@ -728,9 +710,6 @@ private struct StudyRecordQuizCard: View {
             metadataRow(left: displayTitle(for: quiz.quizType), right: quiz.createdAt)
             bodySection(title: "문제", text: quiz.question)
             bodySection(title: "정답", text: quiz.answer, lineLimit: 3)
-            Text("\(quiz.provider) · \(quiz.model)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
     }
 
