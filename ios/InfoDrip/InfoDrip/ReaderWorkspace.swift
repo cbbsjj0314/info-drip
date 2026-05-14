@@ -49,6 +49,9 @@ struct ReaderWorkspace: View {
                                 highlightAvailabilityMessage: highlightAvailabilityMessage,
                                 canRunQuickAction: canRunQuickAction,
                                 onSelect: handleQuickAction,
+                                onRequestExplanation: handleExplanationRequest,
+                                onRequestGlossary: handleGlossaryRequest,
+                                onRequestQuiz: handleQuizRequest,
                                 onQuestion: handleQuestion,
                                 onStudyQuiz: handleStudyQuiz,
                                 onOpenExplanationDetail: openExplanationDetail,
@@ -205,15 +208,24 @@ struct ReaderWorkspace: View {
         switch action {
         case .highlight:
             onSaveHighlight(selection)
-        case .explain:
-            onExplain(selection)
-        case .glossary:
-            onGlossary(selection)
-        case .quiz:
-            onQuiz(selection)
-        case .question:
+        case .explain, .glossary, .quiz, .question:
             break
         }
+    }
+
+    private func handleExplanationRequest() {
+        selectedQuickAction = .explain
+        onExplain(selection)
+    }
+
+    private func handleGlossaryRequest() {
+        selectedQuickAction = .glossary
+        onGlossary(selection)
+    }
+
+    private func handleQuizRequest() {
+        selectedQuickAction = .quiz
+        onQuiz(selection)
     }
 
     private func handleQuestion(_ question: String) {

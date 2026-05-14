@@ -14,6 +14,9 @@ struct QuickActionPanel: View {
     let highlightAvailabilityMessage: String?
     let canRunQuickAction: Bool
     let onSelect: (QuickAction) -> Void
+    let onRequestExplanation: () -> Void
+    let onRequestGlossary: () -> Void
+    let onRequestQuiz: () -> Void
     let onQuestion: (String) -> Void
     let onStudyQuiz: (Int) -> Void
     let onOpenExplanationDetail: (BackendExplanation) -> Void
@@ -193,6 +196,8 @@ struct QuickActionPanel: View {
     private var questionContent: some View {
         if selectedAction == .question {
             VStack(alignment: .leading, spacing: 10) {
+                actionPrompt("선택한 문장에 대해 직접 질문합니다.")
+
                 HStack(spacing: 8) {
                     TextField("선택한 문장에 대해 질문하기", text: $questionText)
                         .textFieldStyle(.roundedBorder)
@@ -301,6 +306,7 @@ struct QuickActionPanel: View {
                         }
                     }
                 case .failed, .idle:
+                    actionPrompt("선택한 문장을 바탕으로 퀴즈를 생성합니다.")
                     quizActionRow(quizzes: [])
                 }
             }
@@ -314,10 +320,19 @@ struct QuickActionPanel: View {
                 Button {
                     onOpenQuizStudy(quizzes)
                 } label: {
-                    Label("공부 모드 열기", systemImage: "rectangle.stack.badge.play")
+                    Label("퀴즈 풀기", systemImage: "rectangle.stack.badge.play")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+            } else {
+                Button {
+                    onRequestQuiz()
+                } label: {
+                    Label("퀴즈 생성", systemImage: "sparkles")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .disabled(!canRunQuickAction)
             }
 
             studyQuizMenu
@@ -399,7 +414,18 @@ struct QuickActionPanel: View {
                         .foregroundStyle(.secondary)
                 }
             case .failed, .idle:
-                EmptyView()
+                VStack(alignment: .leading, spacing: 10) {
+                    actionPrompt("선택한 문장을 한국어로 풀어 설명하고 핵심 포인트를 생성합니다.")
+
+                    Button {
+                        onRequestExplanation()
+                    } label: {
+                        Label("AI에게 설명 요청", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(!canRunQuickAction)
+                }
             }
         }
     }
@@ -452,7 +478,18 @@ struct QuickActionPanel: View {
                     }
                 }
             case .failed, .idle:
-                EmptyView()
+                VStack(alignment: .leading, spacing: 10) {
+                    actionPrompt("선택한 문장에서 학습할 만한 용어와 정의를 추출합니다.")
+
+                    Button {
+                        onRequestGlossary()
+                    } label: {
+                        Label("AI에게 용어 추출 요청", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(!canRunQuickAction)
+                }
             }
         }
     }
@@ -525,6 +562,13 @@ struct QuickActionPanel: View {
         return normalizedEvidenceText.isEmpty ? nil : normalizedEvidenceText
     }
 
+    private func actionPrompt(_ message: String) -> some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private func loadedResultPreview<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -563,7 +607,7 @@ enum QuickAction: String, CaseIterable, Identifiable {
         case .highlight:
             return "하이라이트"
         case .explain:
-            return "쉽게 설명"
+            return "설명"
         case .glossary:
             return "용어"
         case .quiz:
