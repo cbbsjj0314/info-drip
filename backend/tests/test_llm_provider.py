@@ -681,10 +681,12 @@ def test_openai_compatible_provider_generates_normalized_glossary_terms() -> Non
     assert "Selected text:\nselected concept" in user_prompt
     assert "Surrounding context:\nnearby context" in user_prompt
     assert "Document title:\nSample Document" in user_prompt
-    assert "short phrase from the selected text" in user_prompt
     assert "top-level key terms" in user_prompt
     assert "term, definition, and source_text" in user_prompt
     assert "source_text is required and may be null" in user_prompt
+    assert "For source_text, use null by default" in user_prompt
+    assert "short selected-text phrase when it is essential" in user_prompt
+    assert "Never include page context or long surrounding passages" in user_prompt
     assert "natural-language JSON values" in user_prompt
     assert "write Korean by default" in user_prompt
     assert "Never translate JSON field names" in user_prompt

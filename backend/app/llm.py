@@ -887,9 +887,9 @@ class OpenAICompatibleLLMProvider:
                 "definition in Korean by default."
             ),
             (
-                "For source_text, return only a short phrase from the selected text "
-                "that supports the term. Do not return full page context or long "
-                "surrounding passages."
+                "For source_text, use null by default. Only include a short "
+                "selected-text phrase when it is essential. Never include page "
+                "context or long surrounding passages."
             ),
             f"Return at most {MAX_GLOSSARY_TERMS_PER_REQUEST} terms.",
         ]
