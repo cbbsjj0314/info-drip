@@ -24,6 +24,7 @@ struct QuickActionPanel: View {
     let onOpenGlossaryDetail: ([BackendGlossaryTerm]) -> Void
     let onOpenQuizStudy: ([BackendQuiz]) -> Void
     let onOpenQuestionDetail: (BackendUserQuestion) -> Void
+    let onClose: () -> Void
     @State private var questionText = ""
     @State private var submittedQuestionText = ""
 
@@ -39,6 +40,14 @@ struct QuickActionPanel: View {
                 }
 
                 Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("퀵 액션 닫기")
             }
 
             HStack(spacing: 10) {
