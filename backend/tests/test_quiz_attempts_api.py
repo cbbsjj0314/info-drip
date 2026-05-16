@@ -305,6 +305,128 @@ def test_create_quiz_attempt_rejects_missing_quiz() -> None:
         app.dependency_overrides.clear()
 
 
+def test_delete_quiz_attempt_removes_attempt_from_history_review_again_and_study_records() -> None:
+    test_session = build_test_session()
+    quiz = create_quiz_context(test_session)
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        create_response = client.post(
+            f"/api/v1/quizzes/{quiz.quiz_id}/attempts",
+            json={
+                "user_answer": "Review answer.",
+                "is_correct": False,
+                "feedback": "Needs review.",
+            },
+        )
+        assert create_response.status_code == 201
+        attempt_id = create_response.json()["id"]
+
+        review_again_before_delete = client.get("/api/v1/quiz-attempts/review-again")
+        assert review_again_before_delete.status_code == 200
+        assert [item["attempt_id"] for item in review_again_before_delete.json()] == [
+            attempt_id
+        ]
+
+        delete_response = client.delete(f"/api/v1/quiz-attempts/{attempt_id}")
+
+        assert delete_response.status_code == 204
+        assert delete_response.content == b""
+
+        second_delete_response = client.delete(f"/api/v1/quiz-attempts/{attempt_id}")
+        assert second_delete_response.status_code == 404
+        assert second_delete_response.json() == {"detail": "Quiz attempt not found."}
+
+        history_response = client.get(f"/api/v1/quizzes/{quiz.quiz_id}/attempts")
+        assert history_response.status_code == 200
+        assert history_response.json() == []
+
+        review_again_after_delete = client.get("/api/v1/quiz-attempts/review-again")
+        assert review_again_after_delete.status_code == 200
+        assert review_again_after_delete.json() == []
+
+        study_records_response = client.get(
+            f"/api/v1/documents/{quiz.document_id}/study-records"
+        )
+        assert study_records_response.status_code == 200
+        assert study_records_response.json()["quiz_attempts"] == []
+
+        with test_session() as session:
+            assert session.get(database.QuizAttempt, attempt_id) is None
+            assert session.get(database.Quiz, quiz.quiz_id) is not None
+            assert session.get(database.Highlight, quiz.highlight_id) is not None
+            assert session.get(database.Document, quiz.document_id) is not None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_delete_quiz_attempt_rejects_missing_attempt() -> None:
+    test_session = build_test_session()
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.delete("/api/v1/quiz-attempts/404")
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Quiz attempt not found."}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_delete_quiz_attempt_rejects_attempt_with_review_cards() -> None:
+    test_session = build_test_session()
+    quiz = create_quiz_context(test_session)
+    created_at = datetime(2026, 5, 12, 10, 30, tzinfo=UTC)
+
+    with test_session() as session:
+        attempt = database.QuizAttempt(
+            quiz_id=quiz.quiz_id,
+            user_answer="Review answer.",
+            is_correct=False,
+            feedback="Needs review.",
+            created_at=created_at,
+        )
+        session.add(attempt)
+        session.flush()
+        review_card = database.ReviewCard(
+            document_id=quiz.document_id,
+            quiz_id=quiz.quiz_id,
+            quiz_attempt_id=attempt.id,
+            front="Sanitized front?",
+            back="Sanitized back.",
+            source_text=None,
+            provider="fake-provider",
+            model="fake-model",
+            created_at=created_at,
+        )
+        session.add(review_card)
+        session.commit()
+        session.refresh(attempt)
+        session.refresh(review_card)
+        attempt_id = attempt.id
+        review_card_id = review_card.id
+
+    override_app_db_session(test_session)
+
+    try:
+        client = TestClient(app)
+
+        response = client.delete(f"/api/v1/quiz-attempts/{attempt_id}")
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": "Quiz attempt has review cards."}
+
+        with test_session() as session:
+            assert session.get(database.QuizAttempt, attempt_id) is not None
+            assert session.get(database.ReviewCard, review_card_id) is not None
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_list_quiz_attempts_keeps_per_quiz_history_created_at_then_id_order() -> None:
     test_session = build_test_session()
     quiz_id = create_quiz(test_session)

@@ -8,11 +8,11 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import Body, Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.database import (
@@ -1054,6 +1054,42 @@ def list_review_again_quiz_attempts(
         review_again_attempt_to_response(attempt, quiz, highlight, document)
         for attempt, quiz, highlight, document in db.execute(statement).all()
     ]
+
+
+@app.delete(
+    "/api/v1/quiz-attempts/{attempt_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_quiz_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db_session),
+) -> Response:
+    attempt = db.get(QuizAttempt, attempt_id)
+    if attempt is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz attempt not found.",
+        )
+
+    review_card_id = db.scalar(
+        select(ReviewCard.id).where(ReviewCard.quiz_attempt_id == attempt_id).limit(1)
+    )
+    if review_card_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quiz attempt has review cards.",
+        )
+
+    result = db.execute(delete(QuizAttempt).where(QuizAttempt.id == attempt_id))
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz attempt not found.",
+        )
+
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get(
