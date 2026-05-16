@@ -731,6 +731,14 @@ final class LocalPDFStore: ObservableObject {
             return
         }
 
+        if let lastSavedHighlight,
+           lastSavedHighlight.documentID == backendDocument.id,
+           lastSavedHighlight.pageNumber == pageNumber,
+           lastSavedHighlight.selectedText == selectedText {
+            highlightSaveState = .saved(lastSavedHighlight)
+            return
+        }
+
         highlightSaveState = .saving
         lastSavedHighlight = nil
 
