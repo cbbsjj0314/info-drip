@@ -417,7 +417,7 @@ private struct DocumentInfoView: View {
             return Label("Uploading to backend", systemImage: "icloud.and.arrow.up")
         case .uploaded(let backendDocument):
             return Label(
-                "Backend document #\(backendDocument.id) · \(backendDocument.pageCount) pages",
+                "Backend linked · \(backendDocument.pageCount) pages",
                 systemImage: "checkmark.icloud"
             )
         case .failed:

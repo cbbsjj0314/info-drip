@@ -221,7 +221,7 @@ private struct UploadStatusView: View {
         case .uploading:
             return "Creating backend document record."
         case .uploaded(let backendDocument):
-            return "Document #\(backendDocument.id) is ready for highlights."
+            return "Backend linked · \(backendDocument.pageCount) pages · Ready for highlights."
         case .failed(let message):
             return message
         }

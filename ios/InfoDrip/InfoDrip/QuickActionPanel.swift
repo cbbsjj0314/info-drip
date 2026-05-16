@@ -92,8 +92,8 @@ struct QuickActionPanel: View {
                 return highlightAvailabilityMessage
             case .loading:
                 return "설명을 생성하는 중..."
-            case .loaded(let explanation):
-                return "설명 생성됨 · #\(explanation.id)"
+            case .loaded:
+                return "설명 생성됨"
             case .failed(let message):
                 return message
             }
@@ -127,7 +127,7 @@ struct QuickActionPanel: View {
                 return "답변을 생성하는 중..."
             case .loaded(let userQuestion):
                 if shouldShowQuestionResult(userQuestion) {
-                    return "답변 생성됨 · #\(userQuestion.id)"
+                    return "답변 생성됨"
                 }
                 return "질문을 수정했습니다. 다시 질문하기를 눌러 새 답변을 생성하세요."
             case .failed(let message):

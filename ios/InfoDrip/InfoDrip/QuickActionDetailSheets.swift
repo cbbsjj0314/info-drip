@@ -316,18 +316,13 @@ struct DocumentStudyRecordSheet: View {
 
     private func documentHeader(_ document: BackendDocument) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(document.title)
+            Text(document.originalFilename)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("\(document.pageCount) pages · #\(document.id)")
+            Text("\(document.pageCount) pages")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            Text(document.originalFilename)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -642,7 +637,7 @@ private struct StudyRecordExplanationCard: View {
 
     var body: some View {
         StudyRecordCard {
-            metadataRow(left: "#\(explanation.id) · highlight #\(explanation.highlightID)", right: explanation.createdAt)
+            metadataRow(left: "설명", right: explanation.createdAt)
 
             Text(explanation.summary)
                 .font(.subheadline)
@@ -690,8 +685,8 @@ private struct StudyRecordUserQuestionCard: View {
 
     var body: some View {
         StudyRecordCard {
-            metadataRow(left: "#\(userQuestion.id) · highlight #\(userQuestion.highlightID)", right: userQuestion.createdAt)
-            bodySection(title: "질문", text: userQuestion.question)
+            metadataRow(left: "질문 기록", right: userQuestion.createdAt)
+            bodySection(title: "내 질문", text: userQuestion.question)
             bodySection(title: "답변", text: userQuestion.answer, lineLimit: 4)
 
             if let evidenceText = nonBlank(userQuestion.evidenceText) {
@@ -730,7 +725,7 @@ private struct StudyRecordQuizAttemptCard: View {
 
     var body: some View {
         StudyRecordCard {
-            metadataRow(left: "quiz #\(attempt.quizID)", right: attempt.createdAt)
+            metadataRow(left: "풀이 기록", right: attempt.createdAt)
             bodySection(title: "내 답안", text: attempt.userAnswer)
             Text(correctnessText)
                 .font(.caption.weight(.semibold))
@@ -1420,14 +1415,14 @@ private struct ReviewAgainReplaySheet: View {
         }
     }
 
-    private func savedMessage(for attempt: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+    private func savedMessage(for _: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
         switch kind {
         case .answerOnly:
-            return "저장됨 · #\(attempt.id)"
+            return "저장됨"
         case .correct:
-            return "맞음으로 저장됨 · #\(attempt.id)"
+            return "맞음으로 저장됨"
         case .reviewAgain:
-            return "다시 보기로 저장됨 · #\(attempt.id)"
+            return "다시 보기로 저장됨"
         }
     }
 
@@ -1634,14 +1629,14 @@ private struct QuizStudyCard: View {
         return answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func savedMessage(for attempt: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+    private func savedMessage(for _: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
         switch kind {
         case .answerOnly:
-            return "저장됨 · #\(attempt.id)"
+            return "저장됨"
         case .correct:
-            return "맞음으로 저장됨 · #\(attempt.id)"
+            return "맞음으로 저장됨"
         case .reviewAgain:
-            return "다시 보기로 저장됨 · #\(attempt.id)"
+            return "다시 보기로 저장됨"
         }
     }
 
