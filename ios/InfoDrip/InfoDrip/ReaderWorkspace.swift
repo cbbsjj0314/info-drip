@@ -213,6 +213,10 @@ struct ReaderWorkspace: View {
 
         switch action {
         case .highlight:
+            if case .saved = highlightSaveState {
+                return
+            }
+
             onSaveHighlight(selection)
         case .explain, .glossary, .quiz, .question:
             break

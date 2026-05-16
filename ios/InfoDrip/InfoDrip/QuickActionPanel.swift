@@ -138,9 +138,9 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .saving:
-                return "하이라이트 저장 중..."
-            case .saved(let highlight):
-                return "하이라이트 저장됨 · #\(highlight.id)"
+                return "문장 저장 중..."
+            case .saved:
+                return "저장됨"
             case .failed(let message):
                 return message
             }
@@ -551,7 +551,13 @@ struct QuickActionPanel: View {
 
     private func isDisabled(_ action: QuickAction) -> Bool {
         switch action {
-        case .highlight, .explain, .glossary, .quiz, .question:
+        case .highlight:
+            if case .saved = highlightSaveState {
+                return true
+            }
+
+            return !canRunQuickAction
+        case .explain, .glossary, .quiz, .question:
             return !canRunQuickAction
         }
     }
@@ -667,7 +673,7 @@ enum QuickAction: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .highlight:
-            return "하이라이트"
+            return "문장 저장"
         case .explain:
             return "설명"
         case .glossary:
