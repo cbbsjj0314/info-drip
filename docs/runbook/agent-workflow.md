@@ -316,7 +316,11 @@ Runtime validation은 생략할 수 있다.
 
 ### Backend runtime/code 변경
 
-기본 required checks:
+Backend 변경 기본 required check:
+
+- `backend/scripts/check.sh`
+
+이 script는 `backend/` directory에서 다음을 실행한다.
 
 - `uv run ruff check .`
 - `uv run pytest`

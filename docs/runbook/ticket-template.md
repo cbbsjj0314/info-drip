@@ -56,7 +56,18 @@ Ticket은 scope, acceptance criteria, checks, risk를 정리하는 source이고,
 
 ## Required Checks
 
-<!-- 변경 유형에 맞는 command 또는 docs reread 기준을 적는다. -->
+<!--
+변경 유형에 맞는 command 또는 docs reread 기준을 적는다.
+
+Backend 변경 예:
+- `backend/scripts/check.sh`
+
+iPad 변경 예:
+- `xcodebuild -project ios/InfoDrip/InfoDrip.xcodeproj -scheme InfoDrip -destination 'generic/platform=iOS' build`
+
+Docs-only 변경 예:
+- `Not run (docs-only change)`
+-->
 
 -
 

@@ -95,8 +95,7 @@ Ticket의 acceptance criteria를 어떻게 만족했는지 짧게 적는다.
 기본은 `command: result` 한 줄 형식으로 쓴다.
 
 Backend code 변경 예:
-- `uv run ruff check .`: passed
-- `uv run pytest`: passed
+- `backend/scripts/check.sh`: passed
 
 Docs-only 변경 예:
 - Not run (docs-only change)
