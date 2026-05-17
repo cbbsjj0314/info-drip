@@ -143,9 +143,11 @@ Rules:
 - Do not reformat, rename, or refactor unrelated code.
 - Ask for clarification when task boundary, data contract, runtime boundary, or security boundary is ambiguous.
 - Prefer repo-grounded evidence from code, tests, docs, and `docs/local/NEXT.md` when available.
-- Do not create branches, commits, pull requests, issues, or labels unless the user explicitly asks.
-- Do not perform git operations unless the user explicitly asks.
+- For an approved ticket, Codex may create a working branch, commit, push, and prepare or create a pull request.
+- Keep one ticket to one branch/PR when practical.
+- Do not push directly to `main`, merge PRs, create releases/tags, force-push without explicit instruction, edit outside ticket scope, or commit secrets, private data, or build artifacts.
 - Do not edit files through remote tools unless the user explicitly asks.
+- Put repeatable workflow details in `docs/runbook/agent-workflow.md`.
 
 ## Code Comments
 
@@ -291,11 +293,10 @@ Keep reports short and concrete.
 
 ## Git Conventions
 
-Only when the user explicitly asks for git actions:
-
-- Prefer one branch per current work item.
+- Prefer branch names based on work type: `feat/`, `fix/`, `docs/`, `chore/`, `test/`, `refactor/`.
+- Treat `codex/` and `agent/` as non-default branch naming conventions.
+- AI involvement does not need to be marked by default in the branch name or PR body.
 - Use commit subjects like `type(scope): summary`.
-- Suggested types: `feat`, `fix`, `test`, `docs`, `chore`, `refactor`.
 
 Examples:
 
