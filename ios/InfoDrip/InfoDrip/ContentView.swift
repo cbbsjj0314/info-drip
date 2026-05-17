@@ -70,6 +70,9 @@ struct ContentView: View {
                 onLoadReviewAgainAttempts: { documentID in
                     try await pdfStore.listReviewAgainQuizAttempts(documentID: documentID)
                 },
+                onDeleteQuizAttempt: { attemptID in
+                    try await pdfStore.deleteQuizAttempt(attemptID: attemptID)
+                },
                 onLoadStudyRecord: { documentID in
                     try await pdfStore.loadDocumentStudyRecord(documentID: documentID)
                 },

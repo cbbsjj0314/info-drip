@@ -942,10 +942,14 @@ struct ReviewAgainQuizAttemptsSheet: View {
     let documentID: Int
     let documentTitle: String
     let onLoad: (Int) async throws -> [BackendReviewAgainQuizAttempt]
+    let onDeleteAttempt: (Int) async throws -> Void
     let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
     @State private var state: ReviewAgainLoadState = .idle
     @State private var activeReplaySheet: ReviewAgainReplaySnapshot?
+    @State private var deletingAttemptIDs: Set<Int> = []
+    @State private var removalErrorsByAttemptID: [Int: String] = [:]
+    @State private var removalNotice: String?
 
     var body: some View {
         NavigationStack {
@@ -1058,16 +1062,76 @@ struct ReviewAgainQuizAttemptsSheet: View {
                 }
                 .padding(.bottom, 4)
 
+                if let removalNotice {
+                    Label(removalNotice, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 ForEach(attempts, id: \.attemptID) { attempt in
                     ReviewAgainQuizAttemptCard(
                         attempt: attempt,
+                        isDeleting: deletingAttemptIDs.contains(attempt.attemptID),
+                        removalError: removalErrorsByAttemptID[attempt.attemptID],
                         onReplay: {
                             activeReplaySheet = ReviewAgainReplaySnapshot(attempt: attempt)
+                        },
+                        onDelete: {
+                            deleteAttempt(attempt)
                         }
                     )
                 }
             }
             .padding(24)
+        }
+    }
+
+    private func deleteAttempt(_ attempt: BackendReviewAgainQuizAttempt) {
+        let attemptID = attempt.attemptID
+        guard !deletingAttemptIDs.contains(attemptID) else {
+            return
+        }
+
+        deletingAttemptIDs.insert(attemptID)
+        removalErrorsByAttemptID[attemptID] = nil
+        removalNotice = nil
+
+        Task { @MainActor in
+            defer {
+                deletingAttemptIDs.remove(attemptID)
+            }
+
+            do {
+                try await onDeleteAttempt(attemptID)
+                removeAttemptFromLoadedState(attemptID: attemptID)
+                await reloadLoadedAttemptsSilently()
+            } catch BackendAPIError.quizAttemptAlreadyRemoved {
+                removalNotice = "이미 다시 보기 목록에서 제거된 항목입니다."
+                removeAttemptFromLoadedState(attemptID: attemptID)
+                await reloadLoadedAttemptsSilently()
+            } catch BackendAPIError.quizAttemptHasReviewCards {
+                removalErrorsByAttemptID[attemptID] = "복습 카드가 연결되어 있어 제거할 수 없습니다."
+            } catch {
+                removalErrorsByAttemptID[attemptID] = "다시 보기 목록에서 제거하지 못했습니다."
+            }
+        }
+    }
+
+    private func removeAttemptFromLoadedState(attemptID: Int) {
+        guard case .loaded(let attempts) = state else {
+            return
+        }
+
+        state = .loaded(attempts.filter { $0.attemptID != attemptID })
+    }
+
+    private func reloadLoadedAttemptsSilently() async {
+        do {
+            let attempts = try await onLoad(documentID)
+            state = .loaded(attempts)
+        } catch {
+            // Keep the locally updated list; the next sheet open will fetch backend truth again.
         }
     }
 
@@ -1097,7 +1161,11 @@ private struct ReviewAgainReplaySnapshot: Identifiable {
 
 private struct ReviewAgainQuizAttemptCard: View {
     let attempt: BackendReviewAgainQuizAttempt
+    let isDeleting: Bool
+    let removalError: String?
     let onReplay: () -> Void
+    let onDelete: () -> Void
+    @State private var isConfirmingRemoval = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1120,14 +1188,47 @@ private struct ReviewAgainQuizAttemptCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(Color(.separator), lineWidth: 0.5)
         }
+        .confirmationDialog(
+            "이 풀이 기록을 다시 보기 목록에서 제거할까요?",
+            isPresented: $isConfirmingRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("다시 보기에서 제거", role: .destructive, action: onDelete)
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("제거하면 이 항목은 다시 보기 목록과 퀴즈 풀이 기록에서 빠집니다.")
+        }
     }
 
     private var actionStack: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button(action: onReplay) {
-                Label("다시 풀기", systemImage: "pencil")
+            HStack(spacing: 10) {
+                Button(action: onReplay) {
+                    Label("다시 풀기", systemImage: "pencil")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isDeleting)
+
+                Button(role: .destructive) {
+                    isConfirmingRemoval = true
+                } label: {
+                    Label("다시 보기에서 제거", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isDeleting)
+
+                if isDeleting {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
-            .buttonStyle(.borderedProminent)
+
+            if let removalError {
+                Label(removalError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
