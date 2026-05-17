@@ -353,7 +353,7 @@ private struct SavedSentenceDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
+                    SheetDismissIconButton(accessibilityLabel: "저장된 문장 상세 닫기") {
                         dismiss()
                     }
                 }
@@ -362,7 +362,8 @@ private struct SavedSentenceDetailSheet: View {
         .sheet(item: $activeQuizStudySnapshot) { studySnapshot in
             QuizStudySheet(
                 quizzes: studySnapshot.quizzes,
-                onSaveAttempt: onSaveQuizAttempt
+                onSaveAttempt: onSaveQuizAttempt,
+                usesCompactDismissButton: true
             )
         }
     }
@@ -448,6 +449,21 @@ private struct SavedSentenceDetailSheet: View {
 private struct SavedSentenceQuizStudySnapshot: Identifiable {
     let id = UUID()
     let quizzes: [BackendQuiz]
+}
+
+struct SheetDismissIconButton: View {
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tertiary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
 }
 
 private struct SavedSentenceDetailExplanationCard: View {
