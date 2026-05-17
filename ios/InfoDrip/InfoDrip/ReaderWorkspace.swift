@@ -21,7 +21,6 @@ struct ReaderWorkspace: View {
     let onDeleteQuizAttempt: (Int) async throws -> Void
     let onLoadStudyRecord: (Int) async throws -> BackendDocumentStudyRecord
     let onClearHighlightState: () -> Void
-    @State private var isDocumentInfoPresented = false
     @State private var activeReviewAgainSheet: ReviewAgainSheetSnapshot?
     @State private var activeStudyRecordSheet: StudyRecordSheetSnapshot?
     @State private var activeSavedSentenceSheet: SavedSentenceSheetSnapshot?
@@ -98,25 +97,7 @@ struct ReaderWorkspace: View {
                                 Label("다시 보기 목록", systemImage: "arrow.counterclockwise")
                             }
                             .disabled(!canOpenReviewAgainList)
-
-                            Button {
-                                isDocumentInfoPresented = true
-                            } label: {
-                                Label("Document Info", systemImage: "info.circle")
-                            }
-
-                            Button(action: onImport) {
-                                Label("Import PDF", systemImage: "doc.badge.plus")
-                            }
                         }
-                    }
-                    .sheet(isPresented: $isDocumentInfoPresented) {
-                        DocumentInfoView(
-                            document: document,
-                            uploadState: uploadState,
-                            pageCount: pageCount
-                        )
-                            .presentationDetents([.medium])
                     }
                     .sheet(item: $activeReviewAgainSheet) { snapshot in
                         ReviewAgainQuizAttemptsSheet(
@@ -412,56 +393,5 @@ private struct EmptyReaderState: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
-    }
-}
-
-private struct DocumentInfoView: View {
-    let document: ImportedPDF
-    let uploadState: PDFUploadState
-    let pageCount: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Document")
-                    .font(.title2.weight(.semibold))
-                Text(document.title)
-                    .font(.title3.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(pageCount == 1 ? "1 page" : "\(pageCount) pages")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Stored on this iPad", systemImage: "internaldrive")
-                backendDocumentLabel
-                Label("Select text while reading", systemImage: "text.cursor")
-                Label("Use quick study actions", systemImage: "sparkles")
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-
-            Spacer()
-        }
-        .padding(24)
-    }
-
-    private var backendDocumentLabel: some View {
-        switch uploadState {
-        case .idle:
-            return Label("Not uploaded to backend", systemImage: "icloud.slash")
-        case .uploading:
-            return Label("Uploading to backend", systemImage: "icloud.and.arrow.up")
-        case .uploaded(let backendDocument):
-            return Label(
-                "Backend linked · \(backendDocument.pageCount) pages",
-                systemImage: "checkmark.icloud"
-            )
-        case .failed:
-            return Label("Backend upload failed", systemImage: "exclamationmark.icloud")
-        }
     }
 }
