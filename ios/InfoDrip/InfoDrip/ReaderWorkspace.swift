@@ -24,6 +24,7 @@ struct ReaderWorkspace: View {
     @State private var isDocumentInfoPresented = false
     @State private var activeReviewAgainSheet: ReviewAgainSheetSnapshot?
     @State private var activeStudyRecordSheet: StudyRecordSheetSnapshot?
+    @State private var activeSavedSentenceSheet: SavedSentenceSheetSnapshot?
     @State private var activeQuickActionSheet: QuickActionSheet?
     @State private var selection = PDFTextSelection.empty
     @State private var selectedQuickAction: QuickAction?
@@ -88,6 +89,11 @@ struct ReaderWorkspace: View {
                             }
                             .disabled(!canOpenStudyRecord)
 
+                            Button(action: openSavedSentenceList) {
+                                Label("저장된 문장", systemImage: "text.quote")
+                            }
+                            .disabled(!canOpenSavedSentenceList)
+
                             Button(action: openReviewAgainList) {
                                 Label("다시 보기 목록", systemImage: "arrow.counterclockwise")
                             }
@@ -128,6 +134,13 @@ struct ReaderWorkspace: View {
                             onLoad: onLoadStudyRecord
                         )
                     }
+                    .sheet(item: $activeSavedSentenceSheet) { snapshot in
+                        SavedSentenceListSheet(
+                            documentID: snapshot.documentID,
+                            documentTitle: snapshot.documentTitle,
+                            onLoad: onLoadStudyRecord
+                        )
+                    }
                     .sheet(item: $activeQuickActionSheet) { sheet in
                         switch sheet {
                         case .explanation(let snapshot):
@@ -158,6 +171,14 @@ struct ReaderWorkspace: View {
     }
 
     private var canOpenStudyRecord: Bool {
+        if case .uploaded = uploadState {
+            return true
+        }
+
+        return false
+    }
+
+    private var canOpenSavedSentenceList: Bool {
         if case .uploaded = uploadState {
             return true
         }
@@ -277,6 +298,17 @@ struct ReaderWorkspace: View {
         )
     }
 
+    private func openSavedSentenceList() {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            return
+        }
+
+        activeSavedSentenceSheet = SavedSentenceSheetSnapshot(
+            documentID: backendDocument.id,
+            documentTitle: backendDocument.title
+        )
+    }
+
     private func openExplanationDetail(_ explanation: BackendExplanation) {
         activeQuickActionSheet = .explanation(ExplanationSnapshot(explanation: explanation))
     }
@@ -301,6 +333,12 @@ private struct ReviewAgainSheetSnapshot: Identifiable {
 }
 
 private struct StudyRecordSheetSnapshot: Identifiable {
+    let id = UUID()
+    let documentID: Int
+    let documentTitle: String
+}
+
+private struct SavedSentenceSheetSnapshot: Identifiable {
     let id = UUID()
     let documentID: Int
     let documentTitle: String

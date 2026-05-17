@@ -590,6 +590,265 @@ private enum StudyRecordLoadState: Equatable {
     case failed(String)
 }
 
+struct SavedSentenceListSheet: View {
+    let documentID: Int
+    let documentTitle: String
+    let onLoad: (Int) async throws -> BackendDocumentStudyRecord
+    @Environment(\.dismiss) private var dismiss
+    @State private var state: SavedSentenceLoadState = .idle
+
+    var body: some View {
+        NavigationStack {
+            content
+                .background(Color(.systemGroupedBackground))
+                .navigationTitle("저장된 문장")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("닫기") {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+        .task {
+            guard case .idle = state else {
+                return
+            }
+
+            await load()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .idle, .loading:
+            loadingState
+        case .loaded(let record):
+            loadedState(record)
+        case .failed(let message):
+            failedState(message: message)
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("저장된 문장을 불러오는 중입니다.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func failedState(message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.orange)
+            Text("저장된 문장을 불러오지 못했습니다.")
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
+            Button {
+                Task {
+                    await load()
+                }
+            } label: {
+                Label("다시 시도", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private func loadedState(_ record: BackendDocumentStudyRecord) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                SavedSentenceDocumentHeader(document: record.document)
+
+                if record.highlights.isEmpty {
+                    emptyState
+                } else {
+                    let statusSummary = SavedSentenceStatusSummary(record: record)
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(record.highlights, id: \.id) { highlight in
+                            SavedSentenceCard(
+                                highlight: highlight,
+                                statusLabels: statusSummary.statusLabels(for: highlight)
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "text.badge.plus")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("저장된 문장이 없습니다.")
+                .font(.headline)
+            Text("PDF에서 문장을 선택한 뒤 문장 저장을 하면 여기에 표시됩니다.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+    }
+
+    private func load() async {
+        state = .loading
+
+        do {
+            let record = try await onLoad(documentID)
+            state = .loaded(record)
+        } catch {
+            state = .failed(error.localizedDescription)
+        }
+    }
+}
+
+private enum SavedSentenceLoadState: Equatable {
+    case idle
+    case loading
+    case loaded(BackendDocumentStudyRecord)
+    case failed(String)
+}
+
+private struct SavedSentenceStatusSummary {
+    private let explanationHighlightIDs: Set<Int>
+    private let glossaryHighlightIDs: Set<Int>
+    private let questionHighlightIDs: Set<Int>
+    private let quizHighlightIDs: Set<Int>
+    private let reviewAgainHighlightIDs: Set<Int>
+
+    init(record: BackendDocumentStudyRecord) {
+        explanationHighlightIDs = Set(record.explanations.map(\.highlightID))
+        glossaryHighlightIDs = Set(record.glossaryTerms.map(\.highlightID))
+        questionHighlightIDs = Set(record.userQuestions.map(\.highlightID))
+        quizHighlightIDs = Set(record.quizzes.map(\.highlightID))
+
+        let highlightIDByQuizID = Dictionary(
+            uniqueKeysWithValues: record.quizzes.map { quiz in
+                (quiz.id, quiz.highlightID)
+            }
+        )
+
+        reviewAgainHighlightIDs = Set(
+            record.quizAttempts.compactMap { attempt in
+                guard attempt.isCorrect == .some(false) else {
+                    return nil
+                }
+
+                return highlightIDByQuizID[attempt.quizID]
+            }
+        )
+    }
+
+    func statusLabels(for highlight: BackendHighlight) -> [String] {
+        var labels: [String] = []
+
+        if explanationHighlightIDs.contains(highlight.id) {
+            labels.append("설명")
+        }
+
+        if glossaryHighlightIDs.contains(highlight.id) {
+            labels.append("용어")
+        }
+
+        if questionHighlightIDs.contains(highlight.id) {
+            labels.append("질문")
+        }
+
+        if quizHighlightIDs.contains(highlight.id) {
+            labels.append("퀴즈")
+        }
+
+        if reviewAgainHighlightIDs.contains(highlight.id) {
+            labels.append("다시 보기")
+        }
+
+        return labels.isEmpty ? ["저장만 됨"] : labels
+    }
+}
+
+private struct SavedSentenceDocumentHeader: View {
+    let document: BackendDocument
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(document.originalFilename)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("\(document.pageCount) pages")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SavedSentenceCard: View {
+    let highlight: BackendHighlight
+    let statusLabels: [String]
+
+    var body: some View {
+        StudyRecordCard {
+            metadataRow(left: "p. \(highlight.pageNumber)", right: highlight.createdAt)
+
+            Text(highlight.selectedText)
+                .font(.subheadline)
+                .lineLimit(5)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(statusLabels, id: \.self) { label in
+                        SavedSentenceStatusBadge(label: label)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SavedSentenceStatusBadge: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(foregroundStyle)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(backgroundStyle, in: Capsule())
+    }
+
+    private var foregroundStyle: Color {
+        label == "저장만 됨" ? .secondary : .accentColor
+    }
+
+    private var backgroundStyle: Color {
+        label == "저장만 됨"
+            ? Color(.tertiarySystemGroupedBackground)
+            : Color.accentColor.opacity(0.12)
+    }
+}
+
 private struct StudyRecordSection<Content: View>: View {
     let title: String
     let count: Int
