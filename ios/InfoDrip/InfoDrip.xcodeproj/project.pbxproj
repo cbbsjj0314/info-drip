@@ -15,6 +15,7 @@
 		8B3F4A1B2C1A0001000A0001 /* ReaderWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A182C1A0001000A0001 /* ReaderWorkspace.swift */; };
 		8B3F4A1C2C1A0001000A0001 /* QuickActionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A192C1A0001000A0001 /* QuickActionPanel.swift */; };
 		8B3F4A1D2C1A0001000A0001 /* QuickActionDetailSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A1A2C1A0001000A0001 /* QuickActionDetailSheets.swift */; };
+		8B3F4A202C1A0001000A0001 /* SavedSentenceSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B3F4A1F2C1A0001000A0001 /* SavedSentenceSheets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 		8B3F4A182C1A0001000A0001 /* ReaderWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderWorkspace.swift; sourceTree = "<group>"; };
 		8B3F4A192C1A0001000A0001 /* QuickActionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionPanel.swift; sourceTree = "<group>"; };
 		8B3F4A1A2C1A0001000A0001 /* QuickActionDetailSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionDetailSheets.swift; sourceTree = "<group>"; };
+		8B3F4A1F2C1A0001000A0001 /* SavedSentenceSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedSentenceSheets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +66,7 @@
 				8B3F4A182C1A0001000A0001 /* ReaderWorkspace.swift */,
 				8B3F4A192C1A0001000A0001 /* QuickActionPanel.swift */,
 				8B3F4A1A2C1A0001000A0001 /* QuickActionDetailSheets.swift */,
+				8B3F4A1F2C1A0001000A0001 /* SavedSentenceSheets.swift */,
 				8B3F4A0B2C1A0001000A0001 /* LocalPDFStore.swift */,
 				8B3F4A0C2C1A0001000A0001 /* PDFKitView.swift */,
 				8B3F4A0D2C1A0001000A0001 /* Assets.xcassets */,
@@ -146,6 +149,7 @@
 				8B3F4A1B2C1A0001000A0001 /* ReaderWorkspace.swift in Sources */,
 				8B3F4A1C2C1A0001000A0001 /* QuickActionPanel.swift in Sources */,
 				8B3F4A1D2C1A0001000A0001 /* QuickActionDetailSheets.swift in Sources */,
+				8B3F4A202C1A0001000A0001 /* SavedSentenceSheets.swift in Sources */,
 				8B3F4A0E2C1A0001000A0001 /* InfoDripApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
