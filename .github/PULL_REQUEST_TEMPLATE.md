@@ -10,7 +10,7 @@ PR 본문은 한국어로 작성한다.
 
 객체명 / endpoint / route / table / model / schema / view / API / command / module / class / function / config key / filename은 번역하지 않고 실제 코드 표기를 유지한다.
 
-docs-only PR이면 Validation section은 남기고 `- Not run (docs-only change)`라고 적는다.
+docs-only PR이면 Validation / Checks section은 남기고 `- Not run (docs-only change)`라고 적는다.
 
 PR title guidance:
 PR 전체를 한 줄로 요약하는 짧고 읽기 쉬운 제목으로 쓴다.
@@ -34,6 +34,19 @@ Avoid:
 - big cleanup
 -->
 
+## Ticket
+
+<!--
+Ticket 기반 review에 필요한 최소 정보를 적는다.
+Human Gate Required가 Yes라면 이유를 Risks / Notes에 남긴다.
+-->
+
+- Ticket ID:
+- Risk Level: Low / Medium / High
+- Human Gate Required: Yes / No
+
+---
+
 ## Summary
 
 <!--
@@ -41,8 +54,7 @@ Avoid:
 가능하면 입력과 출력, 또는 사용자 흐름이 보이게 쓴다.
 -->
 
-- 
-- 
+-
 
 ---
 
@@ -52,9 +64,17 @@ Avoid:
 실제 변경 파일, endpoint, table, model, UI flow, prompt schema 등이 보이게 쓴다.
 -->
 
-- 
-- 
-- 
+-
+
+---
+
+## Acceptance Criteria
+
+<!--
+Ticket의 acceptance criteria를 어떻게 만족했는지 짧게 적는다.
+-->
+
+-
 
 ---
 
@@ -65,11 +85,11 @@ Avoid:
 없으면 이 section은 삭제한다.
 -->
 
-- 
+-
 
 ---
 
-## Validation
+## Validation / Checks
 
 <!--
 기본은 `command: result` 한 줄 형식으로 쓴다.
@@ -87,16 +107,27 @@ iPad 변경 예:
 - Xcode build: not run, current environment does not support Xcode validation
 -->
 
-- 
+-
 
 ---
 
-## Notes
+## Manual QA
 
 <!--
-Summary, Changes, Out of scope / Deferred, Validation에 이미 적은 내용을 반복하지 않는다.
+physical iPad smoke나 사람이 직접 확인해야 하는 항목을 적는다.
+없으면 `None` 또는 `Not run`으로 남긴다.
+-->
+
+-
+
+---
+
+## Risks / Notes
+
+<!--
+Summary, Changes, Out of scope / Deferred, Validation / Checks에 이미 적은 내용을 반복하지 않는다.
 리뷰어가 알아야 할 caveat, assumption, local 확인 사항이 있을 때만 남긴다.
 없으면 이 section은 삭제한다.
 -->
 
-- 
+-
