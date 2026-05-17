@@ -553,6 +553,32 @@ struct BackendAPIClient {
         return try JSONDecoder().decode([BackendReviewAgainQuizAttempt].self, from: data)
     }
 
+    func deleteQuizAttempt(attemptID: Int) async throws {
+        let endpoint = baseURL
+            .appendingPathComponent("api/v1/quiz-attempts")
+            .appendingPathComponent(String(attemptID))
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "DELETE"
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw BackendAPIError.invalidResponse
+        }
+
+        switch httpResponse.statusCode {
+        case 204:
+            return
+        case 404:
+            throw BackendAPIError.quizAttemptAlreadyRemoved
+        case 409:
+            throw BackendAPIError.quizAttemptHasReviewCards
+        default:
+            let message = String(data: data, encoding: .utf8)
+            throw BackendAPIError.requestFailed(statusCode: httpResponse.statusCode, message: message)
+        }
+    }
+
     func loadDocumentStudyRecord(documentID: Int) async throws -> BackendDocumentStudyRecord {
         let endpoint = baseURL
             .appendingPathComponent("api/v1/documents")
@@ -654,6 +680,8 @@ struct BackendAPIClient {
 enum BackendAPIError: LocalizedError {
     case invalidResponse
     case invalidRequest(String)
+    case quizAttemptAlreadyRemoved
+    case quizAttemptHasReviewCards
     case requestFailed(statusCode: Int, message: String?)
 
     var errorDescription: String? {
@@ -662,6 +690,10 @@ enum BackendAPIError: LocalizedError {
             return "Backend returned an invalid response."
         case .invalidRequest(let message):
             return message
+        case .quizAttemptAlreadyRemoved:
+            return "이미 다시 보기 목록에서 제거된 항목입니다."
+        case .quizAttemptHasReviewCards:
+            return "복습 카드가 연결되어 있어 제거할 수 없습니다."
         case .requestFailed(let statusCode, let message):
             if let message, !message.isEmpty {
                 return "Backend request failed (\(statusCode)): \(message)"
@@ -908,6 +940,10 @@ final class LocalPDFStore: ObservableObject {
 
     func listReviewAgainQuizAttempts(documentID: Int? = nil) async throws -> [BackendReviewAgainQuizAttempt] {
         try await apiClient.listReviewAgainQuizAttempts(documentID: documentID)
+    }
+
+    func deleteQuizAttempt(attemptID: Int) async throws {
+        try await apiClient.deleteQuizAttempt(attemptID: attemptID)
     }
 
     func loadDocumentStudyRecord(documentID: Int) async throws -> BackendDocumentStudyRecord {

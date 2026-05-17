@@ -18,6 +18,7 @@ struct ReaderWorkspace: View {
     let onStudyQuiz: (PDFTextSelection, Int) -> Void
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     let onLoadReviewAgainAttempts: (Int) async throws -> [BackendReviewAgainQuizAttempt]
+    let onDeleteQuizAttempt: (Int) async throws -> Void
     let onLoadStudyRecord: (Int) async throws -> BackendDocumentStudyRecord
     let onClearHighlightState: () -> Void
     @State private var isDocumentInfoPresented = false
@@ -116,6 +117,7 @@ struct ReaderWorkspace: View {
                             documentID: snapshot.documentID,
                             documentTitle: snapshot.documentTitle,
                             onLoad: onLoadReviewAgainAttempts,
+                            onDeleteAttempt: onDeleteQuizAttempt,
                             onSaveAttempt: onSaveQuizAttempt
                         )
                     }
