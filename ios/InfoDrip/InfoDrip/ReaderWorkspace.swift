@@ -22,7 +22,6 @@ struct ReaderWorkspace: View {
     let onLoadStudyRecord: (Int) async throws -> BackendDocumentStudyRecord
     let onClearHighlightState: () -> Void
     @State private var activeReviewAgainSheet: ReviewAgainSheetSnapshot?
-    @State private var activeStudyRecordSheet: StudyRecordSheetSnapshot?
     @State private var activeSavedSentenceSheet: SavedSentenceSheetSnapshot?
     @State private var activeQuickActionSheet: QuickActionSheet?
     @State private var selection = PDFTextSelection.empty
@@ -83,11 +82,6 @@ struct ReaderWorkspace: View {
                     }
                     .toolbar {
                         ToolbarItemGroup(placement: .navigationBarTrailing) {
-                            Button(action: openStudyRecord) {
-                                Label("학습 기록", systemImage: "list.bullet.rectangle")
-                            }
-                            .disabled(!canOpenStudyRecord)
-
                             Button(action: openSavedSentenceList) {
                                 Label("저장된 문장", systemImage: "text.quote")
                             }
@@ -106,13 +100,6 @@ struct ReaderWorkspace: View {
                             onLoad: onLoadReviewAgainAttempts,
                             onDeleteAttempt: onDeleteQuizAttempt,
                             onSaveAttempt: onSaveQuizAttempt
-                        )
-                    }
-                    .sheet(item: $activeStudyRecordSheet) { snapshot in
-                        DocumentStudyRecordSheet(
-                            documentID: snapshot.documentID,
-                            documentTitle: snapshot.documentTitle,
-                            onLoad: onLoadStudyRecord
                         )
                     }
                     .sheet(item: $activeSavedSentenceSheet) { snapshot in
@@ -146,14 +133,6 @@ struct ReaderWorkspace: View {
     }
 
     private var canOpenReviewAgainList: Bool {
-        if case .uploaded = uploadState {
-            return true
-        }
-
-        return false
-    }
-
-    private var canOpenStudyRecord: Bool {
         if case .uploaded = uploadState {
             return true
         }
@@ -270,17 +249,6 @@ struct ReaderWorkspace: View {
         )
     }
 
-    private func openStudyRecord() {
-        guard case .uploaded(let backendDocument) = uploadState else {
-            return
-        }
-
-        activeStudyRecordSheet = StudyRecordSheetSnapshot(
-            documentID: backendDocument.id,
-            documentTitle: backendDocument.title
-        )
-    }
-
     private func openSavedSentenceList() {
         guard case .uploaded(let backendDocument) = uploadState else {
             return
@@ -310,12 +278,6 @@ struct ReaderWorkspace: View {
 }
 
 private struct ReviewAgainSheetSnapshot: Identifiable {
-    let id = UUID()
-    let documentID: Int
-    let documentTitle: String
-}
-
-private struct StudyRecordSheetSnapshot: Identifiable {
     let id = UUID()
     let documentID: Int
     let documentTitle: String
