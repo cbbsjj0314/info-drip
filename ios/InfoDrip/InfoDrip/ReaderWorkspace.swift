@@ -377,9 +377,9 @@ private struct EmptyReaderState: View {
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 8) {
-                Text("Import a PDF to start reading")
+                Text("PDF를 가져와 읽기 시작하세요")
                     .font(.title.weight(.semibold))
-                Text("Choose a PDF, then select a passage while reading to start a study action.")
+                Text("읽다가 문장을 선택하면 설명, 용어, 퀴즈 같은 학습 기능을 바로 시작할 수 있습니다.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -387,7 +387,7 @@ private struct EmptyReaderState: View {
             }
 
             Button(action: onImport) {
-                Label("Import PDF", systemImage: "doc.badge.plus")
+                Label("PDF 가져오기", systemImage: "doc.badge.plus")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

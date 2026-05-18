@@ -93,9 +93,9 @@ struct ContentView: View {
         )
         .alert(item: $importError) { error in
             Alert(
-                title: Text("Import failed"),
+                title: Text("PDF 가져오기에 실패했습니다"),
                 message: Text(error.message),
-                dismissButton: .default(Text("OK"))
+                dismissButton: .default(Text("확인"))
             )
         }
     }
@@ -103,9 +103,9 @@ struct ContentView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("PDF Reader")
+                Text("PDF 학습 리더")
                     .font(.title2.weight(.semibold))
-                Text("Import a PDF and read it locally on this iPad.")
+                Text("PDF를 가져와 이 iPad에서 읽고, 필요한 문장을 선택해 학습을 시작하세요.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -114,7 +114,7 @@ struct ContentView: View {
             Button {
                 isImporterPresented = true
             } label: {
-                Label("Import PDF", systemImage: "doc.badge.plus")
+                Label("PDF 가져오기", systemImage: "doc.badge.plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.borderedProminent)
@@ -124,12 +124,12 @@ struct ContentView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Current Document")
+                    Text("현재 문서")
                         .font(.headline)
                     Text(document.title)
                         .font(.body)
                         .lineLimit(3)
-                    Text("\(pageCount) pages")
+                    Text("\(pageCount)쪽")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -148,7 +148,7 @@ struct ContentView: View {
         switch result {
         case .success(let urls):
             guard let selectedURL = urls.first else {
-                importError = ImportFailure(message: "No PDF was selected.")
+                importError = ImportFailure(message: "선택한 PDF가 없습니다.")
                 return
             }
 
@@ -207,24 +207,24 @@ private struct UploadStatusView: View {
     private var title: String {
         switch uploadState {
         case .idle:
-            return "Backend not linked"
+            return "학습 문서 준비 전"
         case .uploading:
-            return "Uploading PDF"
+            return "PDF 등록 중"
         case .uploaded:
-            return "Backend linked"
+            return "학습 문서 준비 완료"
         case .failed:
-            return "Upload failed"
+            return "PDF 등록 실패"
         }
     }
 
     private var detail: String {
         switch uploadState {
         case .idle:
-            return "Import a PDF to create a backend document."
+            return "PDF를 가져오면 학습 기록을 저장할 문서를 준비합니다."
         case .uploading:
-            return "Creating backend document record."
+            return "문서와 페이지 정보를 준비하고 있습니다."
         case .uploaded(let backendDocument):
-            return "Backend linked · \(backendDocument.pageCount) pages · Ready for highlights."
+            return "문서 준비 완료 · \(backendDocument.pageCount)쪽 · 문장 저장 가능"
         case .failed(let message):
             return message
         }
