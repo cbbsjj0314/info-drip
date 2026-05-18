@@ -698,7 +698,7 @@ private struct SavedSentenceDetailQuizCard: View {
             }
 
             if let sourceText = savedSentenceNonBlank(quiz.sourceText) {
-                bodySection(title: "근거", text: sourceText, lineLimit: 4)
+                bodySection(title: "나온 부분", text: sourceText, lineLimit: 4)
             }
         }
     }
