@@ -32,7 +32,7 @@ struct QuickActionPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("선택한 부분")
+                    Text("선택한 내용")
                         .font(.headline)
                     Text(selectedAction.map { "\($0.title) 선택됨" } ?? "원하는 작업을 고르세요")
                         .font(.caption)
@@ -138,9 +138,9 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .saving:
-                return "선택한 부분을 저장하고 있습니다."
+                return "선택한 내용을 저장하고 있습니다."
             case .saved:
-                return "선택한 부분을 저장했습니다."
+                return "선택한 내용을 저장했습니다."
             case .failed(let message):
                 return message
             }
@@ -206,7 +206,7 @@ struct QuickActionPanel: View {
     private var questionContent: some View {
         if selectedAction == .question {
             VStack(alignment: .leading, spacing: 10) {
-                actionPrompt("선택한 부분에 대해 직접 질문합니다.")
+                actionPrompt("선택한 내용에 대해 직접 질문합니다.")
 
                 HStack(spacing: 8) {
                     TextField("궁금한 점을 질문하기", text: $questionText)
@@ -284,7 +284,7 @@ struct QuickActionPanel: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("선택한 부분으로 퀴즈를 준비하고 있습니다.")
+                        Text("선택한 내용으로 퀴즈를 준비하고 있습니다.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -316,7 +316,7 @@ struct QuickActionPanel: View {
                         }
                     }
                 case .failed, .idle:
-                    actionPrompt("선택한 부분을 바탕으로 퀴즈를 만듭니다.")
+                    actionPrompt("선택한 내용을 바탕으로 퀴즈를 만듭니다.")
                     quizActionRow(quizzes: [])
                 }
             }
@@ -352,7 +352,7 @@ struct QuickActionPanel: View {
             }
 
             if availableQuizCountOptions.isEmpty {
-                Text("짧은 선택 영역은 기본 2문제로 생성합니다.")
+                Text("선택한 내용이 적어서 기본 2문제로 생성합니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -470,7 +470,7 @@ struct QuickActionPanel: View {
                 }
             case .failed, .idle:
                 VStack(alignment: .leading, spacing: 10) {
-                    actionPrompt("궁금한 부분을 한국어로 풀어 설명하고 핵심 포인트를 정리합니다.")
+                    actionPrompt("선택한 내용을 쉽게 설명하고 핵심 포인트를 정리합니다.")
 
                     Button {
                         onRequestExplanation()
@@ -493,7 +493,7 @@ struct QuickActionPanel: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("선택한 부분에서 용어를 정리하고 있습니다.")
+                    Text("선택한 내용에서 용어를 정리하고 있습니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -534,7 +534,7 @@ struct QuickActionPanel: View {
                 }
             case .failed, .idle:
                 VStack(alignment: .leading, spacing: 10) {
-                    actionPrompt("궁금한 부분의 용어와 뜻을 정리합니다.")
+                    actionPrompt("선택한 내용의 용어와 뜻을 정리합니다.")
 
                     Button {
                         onRequestGlossary()
