@@ -5,6 +5,7 @@ struct SavedSentenceListSheet: View {
     let documentTitle: String
     let onLoad: (Int) async throws -> BackendDocumentStudyRecord
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
+    let onDeleteQuizAttempt: (Int) async throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var state: SavedSentenceLoadState = .idle
     @State private var activeDetailSnapshot: SavedSentenceDetailSnapshot?
@@ -26,7 +27,8 @@ struct SavedSentenceListSheet: View {
         .sheet(item: $activeDetailSnapshot) { snapshot in
             SavedSentenceDetailSheet(
                 snapshot: snapshot,
-                onSaveQuizAttempt: onSaveQuizAttempt
+                onSaveQuizAttempt: onSaveQuizAttempt,
+                onDeleteQuizAttempt: onDeleteQuizAttempt
             )
         }
         .task {
@@ -331,8 +333,23 @@ private struct SavedSentenceCard: View {
 private struct SavedSentenceDetailSheet: View {
     let snapshot: SavedSentenceDetailSnapshot
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
+    let onDeleteQuizAttempt: (Int) async throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: SavedSentenceDetailActiveSheet?
+    @State private var wrongQuizAttempts: [BackendQuizAttempt]
+    @State private var deletingAttemptIDs: Set<Int> = []
+    @State private var removalErrorsByAttemptID: [Int: String] = [:]
+
+    init(
+        snapshot: SavedSentenceDetailSnapshot,
+        onSaveQuizAttempt: @escaping (Int, String, Bool?) async throws -> BackendQuizAttempt,
+        onDeleteQuizAttempt: @escaping (Int) async throws -> Void
+    ) {
+        self.snapshot = snapshot
+        self.onSaveQuizAttempt = onSaveQuizAttempt
+        self.onDeleteQuizAttempt = onDeleteQuizAttempt
+        _wrongQuizAttempts = State(initialValue: snapshot.wrongQuizAttempts)
+    }
 
     var body: some View {
         NavigationStack {
@@ -340,7 +357,7 @@ private struct SavedSentenceDetailSheet: View {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     sentenceBlock
 
-                    if snapshot.hasGeneratedResults {
+                    if hasGeneratedResults {
                         generatedResultSections
                     } else {
                         emptyResultState
@@ -426,19 +443,32 @@ private struct SavedSentenceDetailSheet: View {
             }
         }
 
-        if !snapshot.wrongQuizAttempts.isEmpty {
-            StudyRecordSection(title: "다시 보기", count: snapshot.wrongQuizAttempts.count) {
-                ForEach(snapshot.wrongQuizAttempts, id: \.id) { attempt in
+        if !wrongQuizAttempts.isEmpty {
+            StudyRecordSection(title: "다시 보기", count: wrongQuizAttempts.count) {
+                ForEach(wrongQuizAttempts, id: \.id) { attempt in
                     SavedSentenceDetailWrongAttemptCard(
                         attempt: attempt,
                         replayItem: replayItem(for: attempt),
+                        isDeleting: deletingAttemptIDs.contains(attempt.id),
+                        removalError: removalErrorsByAttemptID[attempt.id],
                         onReplay: { item in
                             activeSheet = .replay(SavedSentenceReplaySnapshot(item: item))
+                        },
+                        onDelete: {
+                            deleteWrongAttempt(attempt)
                         }
                     )
                 }
             }
         }
+    }
+
+    private var hasGeneratedResults: Bool {
+        !snapshot.explanations.isEmpty
+            || !snapshot.glossaryTerms.isEmpty
+            || !snapshot.userQuestions.isEmpty
+            || !snapshot.quizzes.isEmpty
+            || !wrongQuizAttempts.isEmpty
     }
 
     private func replayItem(for attempt: BackendQuizAttempt) -> ReviewAgainReplayItem? {
@@ -451,6 +481,38 @@ private struct SavedSentenceDetailSheet: View {
             quiz: quiz,
             pageNumber: snapshot.highlight.pageNumber
         )
+    }
+
+    private func deleteWrongAttempt(_ attempt: BackendQuizAttempt) {
+        let attemptID = attempt.id
+        guard !deletingAttemptIDs.contains(attemptID) else {
+            return
+        }
+
+        deletingAttemptIDs.insert(attemptID)
+        removalErrorsByAttemptID[attemptID] = nil
+
+        Task { @MainActor in
+            defer {
+                deletingAttemptIDs.remove(attemptID)
+            }
+
+            do {
+                try await onDeleteQuizAttempt(attemptID)
+                removeWrongAttempt(attemptID: attemptID)
+            } catch BackendAPIError.quizAttemptAlreadyRemoved {
+                removeWrongAttempt(attemptID: attemptID)
+            } catch BackendAPIError.quizAttemptHasReviewCards {
+                removalErrorsByAttemptID[attemptID] = "복습 카드가 연결되어 있어 제거할 수 없습니다."
+            } catch {
+                removalErrorsByAttemptID[attemptID] = "다시 보기 목록에서 제거하지 못했습니다."
+            }
+        }
+    }
+
+    private func removeWrongAttempt(attemptID: Int) {
+        wrongQuizAttempts.removeAll { $0.id == attemptID }
+        removalErrorsByAttemptID[attemptID] = nil
     }
 
     private var emptyResultState: some View {
@@ -560,7 +622,11 @@ private struct SavedSentenceDetailQuizCard: View {
 private struct SavedSentenceDetailWrongAttemptCard: View {
     let attempt: BackendQuizAttempt
     let replayItem: ReviewAgainReplayItem?
+    let isDeleting: Bool
+    let removalError: String?
     let onReplay: (ReviewAgainReplayItem) -> Void
+    let onDelete: () -> Void
+    @State private var isConfirmingRemoval = false
 
     var body: some View {
         StudyRecordCard {
@@ -571,14 +637,50 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                 bodySection(title: "피드백", text: feedback, lineLimit: 4)
             }
 
-            if let replayItem {
-                Button {
-                    onReplay(replayItem)
-                } label: {
-                    Label("다시 풀기", systemImage: "pencil")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    if let replayItem {
+                        Button {
+                            onReplay(replayItem)
+                        } label: {
+                            Label("다시 풀기", systemImage: "pencil")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isDeleting)
+                    }
+
+                    Button(role: .destructive) {
+                        isConfirmingRemoval = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isDeleting)
+                    .accessibilityLabel("다시 보기에서 제거")
+
+                    if isDeleting {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                 }
-                .buttonStyle(.bordered)
+
+                if let removalError {
+                    Label(removalError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+        }
+        .confirmationDialog(
+            "이 풀이 기록을 다시 보기 목록에서 제거할까요?",
+            isPresented: $isConfirmingRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("다시 보기에서 제거", role: .destructive, action: onDelete)
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("제거하면 이 항목은 다시 보기 목록과 퀴즈 풀이 기록에서 빠집니다.")
         }
     }
 }
