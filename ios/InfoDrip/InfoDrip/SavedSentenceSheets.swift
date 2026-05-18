@@ -755,7 +755,6 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .tint(.red)
                     .disabled(isDeleting)
                     .accessibilityLabel("다시 보기에서 제거")
 
