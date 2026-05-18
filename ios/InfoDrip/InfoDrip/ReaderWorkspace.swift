@@ -379,7 +379,7 @@ private struct EmptyReaderState: View {
             VStack(spacing: 8) {
                 Text("PDF를 가져와 읽기 시작하세요")
                     .font(.title.weight(.semibold))
-                Text("읽다가 문장을 선택하면 설명, 용어, 퀴즈 같은 학습 기능을 바로 시작할 수 있습니다.")
+                Text("문서를 읽으며 궁금한 부분을 선택해 보세요. AI가 설명, 용어 정리, 퀴즈 생성 등을 도와줍니다.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

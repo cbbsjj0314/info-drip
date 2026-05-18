@@ -93,7 +93,7 @@ struct ContentView: View {
         )
         .alert(item: $importError) { error in
             Alert(
-                title: Text("PDF 가져오기에 실패했습니다"),
+                title: Text("PDF를 가져오지 못했습니다."),
                 message: Text(error.message),
                 dismissButton: .default(Text("확인"))
             )
@@ -103,9 +103,9 @@ struct ContentView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("PDF 학습 리더")
+                Text("AI PDF 리더")
                     .font(.title2.weight(.semibold))
-                Text("PDF를 가져와 이 iPad에서 읽고, 필요한 문장을 선택해 학습을 시작하세요.")
+                Text("PDF를 불러와 읽어보세요. 문장을 선택하면 AI가 이해를 도와줍니다.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -207,24 +207,24 @@ private struct UploadStatusView: View {
     private var title: String {
         switch uploadState {
         case .idle:
-            return "학습 문서 준비 전"
+            return "AI 기능 준비 전"
         case .uploading:
-            return "PDF 등록 중"
+            return "PDF 불러오는 중"
         case .uploaded:
-            return "학습 문서 준비 완료"
+            return "AI 기능 준비 완료"
         case .failed:
-            return "PDF 등록 실패"
+            return "PDF를 불러오지 못했습니다."
         }
     }
 
     private var detail: String {
         switch uploadState {
         case .idle:
-            return "PDF를 가져오면 학습 기록을 저장할 문서를 준비합니다."
+            return "PDF를 가져오면 AI가 문서를 분석할 준비를 합니다."
         case .uploading:
-            return "문서와 페이지 정보를 준비하고 있습니다."
+            return "문서를 분석하여 AI 기능을 준비하고 있습니다."
         case .uploaded(let backendDocument):
-            return "문서 준비 완료 · \(backendDocument.pageCount)쪽 · 문장 저장 가능"
+            return "분석 완료 · \(backendDocument.pageCount)쪽 · AI 사용 가능"
         case .failed(let message):
             return message
         }
