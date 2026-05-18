@@ -652,10 +652,11 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                     Button(role: .destructive) {
                         isConfirmingRemoval = true
                     } label: {
-                        Label("다시 보기에서 제거", systemImage: "trash")
+                        Image(systemName: "trash")
                     }
                     .buttonStyle(.bordered)
                     .disabled(isDeleting)
+                    .accessibilityLabel("다시 보기에서 제거")
 
                     if isDeleting {
                         ProgressView()
