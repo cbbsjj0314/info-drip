@@ -166,6 +166,231 @@ struct GlossaryDetailSheet: View {
     }
 }
 
+struct DocumentGlossaryCollectionSheet: View {
+    let documentID: Int
+    let documentTitle: String
+    let onLoad: (Int) async throws -> BackendDocumentStudyRecord
+    @Environment(\.dismiss) private var dismiss
+    @State private var state: GlossaryCollectionLoadState = .idle
+
+    var body: some View {
+        NavigationStack {
+            content
+                .background(Color(.systemGroupedBackground))
+                .navigationTitle("용어 모음")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        SheetDismissIconButton(accessibilityLabel: "용어 모음 닫기") {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+        .task {
+            guard case .idle = state else {
+                return
+            }
+
+            await load()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .idle, .loading:
+            loadingState
+        case .loaded(let record):
+            loadedState(record)
+        case .failed(let message):
+            failedState(message: message)
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("용어 모음을 불러오는 중입니다.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func failedState(message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.orange)
+            Text("용어 모음을 불러오지 못했습니다.")
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
+            Button {
+                Task {
+                    await load()
+                }
+            } label: {
+                Label("다시 시도", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private func loadedState(_ record: BackendDocumentStudyRecord) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                documentHeader(record.document)
+                Text("용어 \(record.glossaryTerms.count)개")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if record.glossaryTerms.isEmpty {
+                    emptyState
+                } else {
+                    let items = glossaryItems(from: record)
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(items) { item in
+                            GlossaryCollectionTermCard(item: item)
+                        }
+                    }
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    private func documentHeader(_ document: BackendDocument) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(nonBlank(document.originalFilename) ?? documentTitle)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("\(document.pageCount)쪽")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "text.book.closed")
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.secondary)
+            Text("아직 정리된 용어가 없습니다.")
+                .font(.headline)
+            Text("PDF에서 궁금한 부분을 선택한 뒤 용어를 정리하면 여기에 표시됩니다.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 36)
+    }
+
+    private func glossaryItems(from record: BackendDocumentStudyRecord) -> [GlossaryCollectionItem] {
+        let highlightsByID = record.highlights.reduce(into: [Int: BackendHighlight]()) { result, highlight in
+            if result[highlight.id] == nil {
+                result[highlight.id] = highlight
+            }
+        }
+
+        return record.glossaryTerms.map { glossaryTerm in
+            let highlight = highlightsByID[glossaryTerm.highlightID]
+            return GlossaryCollectionItem(
+                glossaryTerm: glossaryTerm,
+                pageNumber: highlight?.pageNumber,
+                sourceText: nonBlank(glossaryTerm.sourceText) ?? nonBlank(highlight?.selectedText)
+            )
+        }
+    }
+
+    private func load() async {
+        state = .loading
+
+        do {
+            let record = try await onLoad(documentID)
+            state = .loaded(record)
+        } catch {
+            state = .failed(error.localizedDescription)
+        }
+    }
+}
+
+private enum GlossaryCollectionLoadState: Equatable {
+    case idle
+    case loading
+    case loaded(BackendDocumentStudyRecord)
+    case failed(String)
+}
+
+private struct GlossaryCollectionItem: Identifiable {
+    let glossaryTerm: BackendGlossaryTerm
+    let pageNumber: Int?
+    let sourceText: String?
+
+    var id: Int {
+        glossaryTerm.id
+    }
+}
+
+private struct GlossaryCollectionTermCard: View {
+    let item: GlossaryCollectionItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(item.glossaryTerm.term)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 8)
+
+                if let pageNumber = item.pageNumber {
+                    Text("\(pageNumber)쪽")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Text(item.glossaryTerm.definition)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let sourceText = item.sourceText {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("근거")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(sourceText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(.separator), lineWidth: 0.5)
+        }
+    }
+}
+
 struct QuestionDetailSheet: View {
     let userQuestion: BackendUserQuestion
     @Environment(\.dismiss) private var dismiss

@@ -23,6 +23,7 @@ struct ReaderWorkspace: View {
     let onClearHighlightState: () -> Void
     @State private var activeReviewAgainSheet: ReviewAgainSheetSnapshot?
     @State private var activeSavedSentenceSheet: SavedSentenceSheetSnapshot?
+    @State private var activeGlossaryCollectionSheet: GlossaryCollectionSheetSnapshot?
     @State private var activeQuickActionSheet: QuickActionSheet?
     @State private var selection = PDFTextSelection.empty
     @State private var selectedQuickAction: QuickAction?
@@ -87,6 +88,11 @@ struct ReaderWorkspace: View {
                             }
                             .disabled(!canOpenSavedSentenceList)
 
+                            Button(action: openGlossaryCollection) {
+                                Label("용어 모음", systemImage: "text.book.closed")
+                            }
+                            .disabled(!canOpenGlossaryCollection)
+
                             Button(action: openReviewAgainList) {
                                 Label("다시 보기 목록", systemImage: "arrow.counterclockwise")
                             }
@@ -111,6 +117,13 @@ struct ReaderWorkspace: View {
                             onDeleteQuizAttempt: onDeleteQuizAttempt
                         )
                     }
+                    .sheet(item: $activeGlossaryCollectionSheet) { snapshot in
+                        DocumentGlossaryCollectionSheet(
+                            documentID: snapshot.documentID,
+                            documentTitle: snapshot.documentTitle,
+                            onLoad: onLoadStudyRecord
+                        )
+                    }
                     .sheet(item: $activeQuickActionSheet) { sheet in
                         switch sheet {
                         case .explanation(let snapshot):
@@ -133,6 +146,14 @@ struct ReaderWorkspace: View {
     }
 
     private var canOpenReviewAgainList: Bool {
+        if case .uploaded = uploadState {
+            return true
+        }
+
+        return false
+    }
+
+    private var canOpenGlossaryCollection: Bool {
         if case .uploaded = uploadState {
             return true
         }
@@ -249,6 +270,17 @@ struct ReaderWorkspace: View {
         )
     }
 
+    private func openGlossaryCollection() {
+        guard case .uploaded(let backendDocument) = uploadState else {
+            return
+        }
+
+        activeGlossaryCollectionSheet = GlossaryCollectionSheetSnapshot(
+            documentID: backendDocument.id,
+            documentTitle: backendDocument.title
+        )
+    }
+
     private func openSavedSentenceList() {
         guard case .uploaded(let backendDocument) = uploadState else {
             return
@@ -278,6 +310,12 @@ struct ReaderWorkspace: View {
 }
 
 private struct ReviewAgainSheetSnapshot: Identifiable {
+    let id = UUID()
+    let documentID: Int
+    let documentTitle: String
+}
+
+private struct GlossaryCollectionSheetSnapshot: Identifiable {
     let id = UUID()
     let documentID: Int
     let documentTitle: String
