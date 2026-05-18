@@ -370,7 +370,7 @@ private struct GlossaryCollectionTermCard: View {
 
             if let sourceText = item.sourceText {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("근거")
+                    Text("발견된 곳")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(sourceText)
