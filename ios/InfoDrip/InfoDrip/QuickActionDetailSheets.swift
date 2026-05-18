@@ -982,7 +982,7 @@ struct ReviewAgainQuizAttemptsSheet: View {
         }
         .sheet(item: $activeReplaySheet) { snapshot in
             ReviewAgainReplaySheet(
-                attempt: snapshot.attempt,
+                item: snapshot.item,
                 onSaveAttempt: onSaveAttempt
             )
         }
@@ -1090,7 +1090,9 @@ struct ReviewAgainQuizAttemptsSheet: View {
                         isDeleting: deletingAttemptIDs.contains(attempt.attemptID),
                         removalError: removalErrorsByAttemptID[attempt.attemptID],
                         onReplay: {
-                            activeReplaySheet = ReviewAgainReplaySnapshot(attempt: attempt)
+                            activeReplaySheet = ReviewAgainReplaySnapshot(
+                                item: ReviewAgainReplayItem(attempt: attempt)
+                            )
                         },
                         onDelete: {
                             deleteAttempt(attempt)
@@ -1171,7 +1173,40 @@ private enum ReviewAgainLoadState: Equatable {
 
 private struct ReviewAgainReplaySnapshot: Identifiable {
     let id = UUID()
-    let attempt: BackendReviewAgainQuizAttempt
+    let item: ReviewAgainReplayItem
+}
+
+struct ReviewAgainReplayItem {
+    let quizID: Int
+    let quizType: String
+    let question: String
+    let answer: String
+    let explanation: String
+    let sourceText: String
+    let pageNumber: Int
+    let previousUserAnswer: String
+
+    init(attempt: BackendReviewAgainQuizAttempt) {
+        quizID = attempt.quizID
+        quizType = attempt.quizType
+        question = attempt.question
+        answer = attempt.answer
+        explanation = attempt.explanation
+        sourceText = attempt.sourceText
+        pageNumber = attempt.pageNumber
+        previousUserAnswer = attempt.userAnswer
+    }
+
+    init(attempt: BackendQuizAttempt, quiz: BackendQuiz, pageNumber: Int) {
+        quizID = attempt.quizID
+        quizType = quiz.quizType
+        question = quiz.question
+        answer = quiz.answer
+        explanation = quiz.explanation
+        sourceText = quiz.sourceText
+        self.pageNumber = pageNumber
+        previousUserAnswer = attempt.userAnswer
+    }
 }
 
 private struct ReviewAgainQuizAttemptCard: View {
@@ -1320,8 +1355,8 @@ private struct ReviewAgainQuizAttemptCard: View {
     }
 }
 
-private struct ReviewAgainReplaySheet: View {
-    let attempt: BackendReviewAgainQuizAttempt
+struct ReviewAgainReplaySheet: View {
+    let item: ReviewAgainReplayItem
     let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
     @State private var answer = ""
@@ -1370,16 +1405,16 @@ private struct ReviewAgainReplaySheet: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(displayTitle(for: attempt.quizType))
+                Text(displayTitle(for: item.quizType))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                Text("p. \(attempt.pageNumber)")
+                Text("p. \(item.pageNumber)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Text(attempt.question)
+            Text(item.question)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1397,7 +1432,7 @@ private struct ReviewAgainReplaySheet: View {
             Text("이전 답안")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text(attempt.userAnswer)
+            Text(item.previousUserAnswer)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1457,8 +1492,8 @@ private struct ReviewAgainReplaySheet: View {
 
     private var revealedAnswerBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            answerBlock(title: "정답", text: attempt.answer)
-            answerBlock(title: "해설", text: attempt.explanation)
+            answerBlock(title: "정답", text: item.answer)
+            answerBlock(title: "해설", text: item.explanation)
 
             if let sourceText = trimmedSourceText {
                 answerBlock(title: "근거", text: sourceText)
@@ -1499,7 +1534,7 @@ private struct ReviewAgainReplaySheet: View {
     }
 
     private var trimmedSourceText: String? {
-        let trimmedText = attempt.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedText = item.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedText.isEmpty ? nil : trimmedText
     }
 
@@ -1522,7 +1557,7 @@ private struct ReviewAgainReplaySheet: View {
 
         Task { @MainActor in
             do {
-                let savedAttempt = try await onSaveAttempt(attempt.quizID, normalizedAnswer, isCorrect)
+                let savedAttempt = try await onSaveAttempt(item.quizID, normalizedAnswer, isCorrect)
                 saveState = .saved(savedAttempt, kind)
                 savedSelfCheckKinds.insert(kind)
             } catch {
