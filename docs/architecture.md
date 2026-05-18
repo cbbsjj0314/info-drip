@@ -2,18 +2,18 @@
 
 ## 1. 개요
 
-InfoDrip은 iPad App, FastAPI Backend, SQLite, LLM API로 구성된 local-first PDF 학습 보조 앱이다.
+InfoDrip은 iPad App, FastAPI Backend, SQLite, LLM API로 구성된 local-first PDF reading assistant / PDF 읽기 보조 앱이다.
 
 | Layer | Responsibility |
 | --- | --- |
 | iPad App | PDF import, PDFKit 기반 reading, selected text quick action, quiz study/replay UI |
-| FastAPI Backend | PDF upload/storage, page text extraction, 구조화된 학습 기록 저장, LLM provider 호출 |
-| SQLite | `documents`, `highlights`, `quizzes`, `quiz_attempts` 등 학습 기록 저장 |
+| FastAPI Backend | PDF upload/storage, page text extraction, 구조화된 읽기 기록과 생성 결과 저장, LLM provider 호출 |
+| SQLite | `documents`, `highlights`, `quizzes`, `quiz_attempts` 등 읽기 기록과 생성 결과 저장 |
 | LLM API | explanation, glossary extraction, question answering, quiz generation 수행 |
 
 핵심 설계 방향:
 
-- **Selected-text 중심:** 전체 PDF 대상 chatbot이 아니라 선택 영역 기반 학습 흐름을 제공한다.
+- **Selected-text 중심:** 전체 PDF 대상 chatbot이 아니라 궁금한 선택 영역 기반 읽기/이해 보조 흐름을 제공한다.
 - **보안 및 책임 분리:** iPad App에는 LLM API key를 저장하지 않고, LLM provider/API 호출은 backend가 담당한다.
 - **Context 제한:** 매 요청마다 full PDF text를 보내지 않고 selected text와 bounded same-page context만 사용한다.
 - **Quiz/review 흐름 분리:** quiz attempt는 `quiz_id` 기반으로 저장하고, review-again은 `is_correct=false` `quiz_attempts` 기반으로 동작한다.
@@ -37,7 +37,7 @@ Primary review UX는 `review_cards`가 아니라 `quiz_attempts` 중심이다.
 
 사용자가 quiz study sheet에서 답을 입력하고 answer reveal 후 self-check를 저장하면, `is_correct=false` attempt가 review-again listing/replay 대상이 된다.
 
-Document-level study record는 highlights, explanations, glossary terms, questions, quizzes, attempts를 한 번에 조회한다.
+Document-level study record는 사용자가 저장한 highlights, explanations, glossary terms, questions, quizzes, attempts를 한 번에 조회하는 문서별 저장 결과 조회다.
 
 ## 3. ERD
 
