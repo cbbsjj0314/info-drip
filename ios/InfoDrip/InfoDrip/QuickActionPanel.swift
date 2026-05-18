@@ -91,7 +91,7 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "설명을 준비하고 있습니다."
+                return nil
             case .loaded:
                 return "설명이 준비되었습니다."
             case .failed(let message):
@@ -102,7 +102,7 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "용어를 정리하고 있습니다."
+                return nil
             case .loaded(let glossaryTerms):
                 return "용어 정리 완료 · \(glossaryTerms.count)개"
             case .failed(let message):
@@ -113,7 +113,7 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "퀴즈를 준비하고 있습니다."
+                return nil
             case .loaded(let quizzes):
                 return "퀴즈가 준비되었습니다 · \(quizzes.count)개"
             case .failed(let message):
@@ -124,7 +124,7 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "답변을 준비하고 있습니다."
+                return nil
             case .loaded(let userQuestion):
                 if shouldShowQuestionResult(userQuestion) {
                     return "답변이 준비되었습니다."
