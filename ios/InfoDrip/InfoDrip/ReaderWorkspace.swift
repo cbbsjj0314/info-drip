@@ -120,7 +120,8 @@ struct ReaderWorkspace: View {
                             documentID: snapshot.documentID,
                             documentTitle: snapshot.documentTitle,
                             onLoad: onLoadStudyRecord,
-                            onSaveQuizAttempt: onSaveQuizAttempt
+                            onSaveQuizAttempt: onSaveQuizAttempt,
+                            onDeleteQuizAttempt: onDeleteQuizAttempt
                         )
                     }
                     .sheet(item: $activeQuickActionSheet) { sheet in
