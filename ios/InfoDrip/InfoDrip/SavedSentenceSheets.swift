@@ -28,7 +28,8 @@ struct SavedSentenceListSheet: View {
             SavedSentenceDetailSheet(
                 snapshot: snapshot,
                 onSaveQuizAttempt: onSaveQuizAttempt,
-                onDeleteQuizAttempt: onDeleteQuizAttempt
+                onDeleteQuizAttempt: onDeleteQuizAttempt,
+                onRemoveQuizAttemptFromRecord: removeQuizAttemptFromLoadedRecord
             )
         }
         .task {
@@ -145,6 +146,27 @@ struct SavedSentenceListSheet: View {
             state = .failed(error.localizedDescription)
         }
     }
+
+    private func removeQuizAttemptFromLoadedRecord(attemptID: Int) {
+        guard case .loaded(let record) = state else {
+            return
+        }
+
+        let updatedRecord = BackendDocumentStudyRecord(
+            document: record.document,
+            highlights: record.highlights,
+            explanations: record.explanations,
+            glossaryTerms: record.glossaryTerms,
+            userQuestions: record.userQuestions,
+            quizzes: record.quizzes,
+            quizAttempts: record.quizAttempts.filter { $0.id != attemptID }
+        )
+        state = .loaded(updatedRecord)
+
+        if let snapshot = activeDetailSnapshot {
+            activeDetailSnapshot = snapshot.removingWrongQuizAttempt(attemptID: attemptID)
+        }
+    }
 }
 
 private enum SavedSentenceLoadState: Equatable {
@@ -238,6 +260,18 @@ private struct SavedSentenceDetailSnapshot: Identifiable {
             || !userQuestions.isEmpty
             || !quizzes.isEmpty
             || !wrongQuizAttempts.isEmpty
+    }
+
+    func removingWrongQuizAttempt(attemptID: Int) -> SavedSentenceDetailSnapshot {
+        SavedSentenceDetailSnapshot(
+            id: id,
+            highlight: highlight,
+            explanations: explanations,
+            glossaryTerms: glossaryTerms,
+            userQuestions: userQuestions,
+            quizzes: quizzes,
+            wrongQuizAttempts: wrongQuizAttempts.filter { $0.id != attemptID }
+        )
     }
 }
 
@@ -334,6 +368,7 @@ private struct SavedSentenceDetailSheet: View {
     let snapshot: SavedSentenceDetailSnapshot
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     let onDeleteQuizAttempt: (Int) async throws -> Void
+    let onRemoveQuizAttemptFromRecord: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var activeSheet: SavedSentenceDetailActiveSheet?
     @State private var wrongQuizAttempts: [BackendQuizAttempt]
@@ -343,11 +378,13 @@ private struct SavedSentenceDetailSheet: View {
     init(
         snapshot: SavedSentenceDetailSnapshot,
         onSaveQuizAttempt: @escaping (Int, String, Bool?) async throws -> BackendQuizAttempt,
-        onDeleteQuizAttempt: @escaping (Int) async throws -> Void
+        onDeleteQuizAttempt: @escaping (Int) async throws -> Void,
+        onRemoveQuizAttemptFromRecord: @escaping (Int) -> Void
     ) {
         self.snapshot = snapshot
         self.onSaveQuizAttempt = onSaveQuizAttempt
         self.onDeleteQuizAttempt = onDeleteQuizAttempt
+        self.onRemoveQuizAttemptFromRecord = onRemoveQuizAttemptFromRecord
         _wrongQuizAttempts = State(initialValue: snapshot.wrongQuizAttempts)
     }
 
@@ -513,6 +550,7 @@ private struct SavedSentenceDetailSheet: View {
     private func removeWrongAttempt(attemptID: Int) {
         wrongQuizAttempts.removeAll { $0.id == attemptID }
         removalErrorsByAttemptID[attemptID] = nil
+        onRemoveQuizAttemptFromRecord(attemptID)
     }
 
     private var emptyResultState: some View {
