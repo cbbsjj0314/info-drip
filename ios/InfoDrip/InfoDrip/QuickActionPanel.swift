@@ -91,9 +91,9 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "설명을 생성하는 중..."
+                return "설명을 준비하고 있습니다."
             case .loaded:
-                return "설명 생성됨"
+                return "설명이 준비되었습니다."
             case .failed(let message):
                 return message
             }
@@ -102,9 +102,9 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "용어를 추출하는 중..."
+                return "용어를 정리하고 있습니다."
             case .loaded(let glossaryTerms):
-                return "용어 추출됨 · \(glossaryTerms.count)개"
+                return "용어 정리 완료 · \(glossaryTerms.count)개"
             case .failed(let message):
                 return message
             }
@@ -113,9 +113,9 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "퀴즈를 생성하는 중..."
+                return "퀴즈를 준비하고 있습니다."
             case .loaded(let quizzes):
-                return "퀴즈 생성됨 · \(quizzes.count)개"
+                return "퀴즈가 준비되었습니다 · \(quizzes.count)개"
             case .failed(let message):
                 return message
             }
@@ -124,12 +124,12 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .loading:
-                return "답변을 생성하는 중..."
+                return "답변을 준비하고 있습니다."
             case .loaded(let userQuestion):
                 if shouldShowQuestionResult(userQuestion) {
-                    return "답변 생성됨"
+                    return "답변이 준비되었습니다."
                 }
-                return "질문을 수정했습니다. 다시 질문하기를 눌러 새 답변을 생성하세요."
+                return "질문을 수정했습니다. 다시 질문하기를 눌러 새 답변을 받아보세요."
             case .failed(let message):
                 return message
             }
@@ -138,9 +138,9 @@ struct QuickActionPanel: View {
             case .idle:
                 return highlightAvailabilityMessage
             case .saving:
-                return "문장 저장 중..."
+                return "문장을 저장하고 있습니다."
             case .saved:
-                return "저장됨"
+                return "문장이 저장되었습니다."
             case .failed(let message):
                 return message
             }
@@ -231,7 +231,7 @@ struct QuickActionPanel: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("선택한 문장과 질문을 backend에 보내 답변을 생성하고 있습니다.")
+                        Text("질문에 대한 답변을 준비하고 있습니다.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -284,7 +284,7 @@ struct QuickActionPanel: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("선택한 문장을 backend에서 퀴즈로 바꾸고 있습니다.")
+                        Text("선택한 문장으로 퀴즈를 준비하고 있습니다.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -316,7 +316,7 @@ struct QuickActionPanel: View {
                         }
                     }
                 case .failed, .idle:
-                    actionPrompt("선택한 문장을 바탕으로 퀴즈를 생성합니다.")
+                    actionPrompt("선택한 문장을 바탕으로 퀴즈를 만듭니다.")
                     quizActionRow(quizzes: [])
                 }
             }
@@ -339,7 +339,7 @@ struct QuickActionPanel: View {
                     Button {
                         onRequestQuiz()
                     } label: {
-                        Label("퀴즈 생성", systemImage: "sparkles")
+                        Label("퀴즈 만들기", systemImage: "sparkles")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
@@ -417,7 +417,7 @@ struct QuickActionPanel: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("선택한 문장을 backend에서 설명으로 바꾸고 있습니다.")
+                    Text("AI가 설명을 준비하고 있습니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -470,7 +470,7 @@ struct QuickActionPanel: View {
                 }
             case .failed, .idle:
                 VStack(alignment: .leading, spacing: 10) {
-                    actionPrompt("선택한 문장을 한국어로 풀어 설명하고 핵심 포인트를 생성합니다.")
+                    actionPrompt("선택한 문장을 한국어로 풀어 설명하고 핵심 포인트를 정리합니다.")
 
                     Button {
                         onRequestExplanation()
@@ -493,13 +493,13 @@ struct QuickActionPanel: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("선택한 문장에서 학습 용어를 추출하고 있습니다.")
+                    Text("선택한 문장에서 학습 용어를 정리하고 있습니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             case .loaded(let glossaryTerms):
                 if glossaryTerms.isEmpty {
-                    Text("추출된 용어가 없습니다.")
+                    Text("정리된 용어가 없습니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -534,12 +534,12 @@ struct QuickActionPanel: View {
                 }
             case .failed, .idle:
                 VStack(alignment: .leading, spacing: 10) {
-                    actionPrompt("선택한 문장에서 학습할 만한 용어와 정의를 추출합니다.")
+                    actionPrompt("선택한 문장에서 학습할 만한 용어와 뜻을 정리합니다.")
 
                     Button {
                         onRequestGlossary()
                     } label: {
-                        Label("AI에게 용어 추출 요청", systemImage: "sparkles")
+                        Label("AI에게 용어 정리 요청", systemImage: "sparkles")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
