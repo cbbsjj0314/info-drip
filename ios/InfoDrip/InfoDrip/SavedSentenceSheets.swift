@@ -340,7 +340,7 @@ private struct SavedSentenceStatusSummary {
         }
 
         if !index.wrongQuizAttempts(for: highlight).isEmpty {
-            labels.append("다시 보기")
+            labels.append("다시 풀 퀴즈")
         }
 
         return labels.isEmpty ? ["저장만 됨"] : labels
@@ -525,7 +525,7 @@ private struct SavedSentenceDetailSheet: View {
         }
 
         if !wrongQuizAttempts.isEmpty {
-            StudyRecordSection(title: "다시 보기", count: wrongQuizAttempts.count) {
+            StudyRecordSection(title: "다시 풀 퀴즈", count: wrongQuizAttempts.count) {
                 ForEach(wrongQuizAttempts, id: \.id) { attempt in
                     SavedSentenceDetailWrongAttemptCard(
                         attempt: attempt,
@@ -586,7 +586,7 @@ private struct SavedSentenceDetailSheet: View {
             } catch BackendAPIError.quizAttemptHasReviewCards {
                 removalErrorsByAttemptID[attemptID] = "복습 카드가 연결되어 있어 제거할 수 없습니다."
             } catch {
-                removalErrorsByAttemptID[attemptID] = "다시 보기 목록에서 제거하지 못했습니다."
+                removalErrorsByAttemptID[attemptID] = "다시 풀 퀴즈에서 제거하지 못했습니다."
             }
         }
     }
@@ -756,7 +756,7 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(isDeleting)
-                    .accessibilityLabel("다시 보기에서 제거")
+                    .accessibilityLabel("다시 풀 퀴즈에서 제거")
 
                     if isDeleting {
                         ProgressView()
@@ -774,14 +774,14 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
             }
         }
         .confirmationDialog(
-            "이 풀이 기록을 다시 보기 목록에서 제거할까요?",
+            "이 풀이 기록을 다시 풀 퀴즈에서 제거할까요?",
             isPresented: $isConfirmingRemoval,
             titleVisibility: .visible
         ) {
-            Button("다시 보기에서 제거", role: .destructive, action: onDelete)
+            Button("다시 풀 퀴즈에서 제거", role: .destructive, action: onDelete)
             Button("취소", role: .cancel) {}
         } message: {
-            Text("제거하면 이 항목은 다시 보기 목록과 퀴즈 풀이 기록에서 빠집니다.")
+            Text("제거하면 이 항목은 다시 풀 퀴즈와 퀴즈 풀이 기록에서 빠집니다.")
         }
     }
 }
