@@ -119,7 +119,8 @@ struct ReaderWorkspace: View {
                         SavedSentenceListSheet(
                             documentID: snapshot.documentID,
                             documentTitle: snapshot.documentTitle,
-                            onLoad: onLoadStudyRecord
+                            onLoad: onLoadStudyRecord,
+                            onSaveQuizAttempt: onSaveQuizAttempt
                         )
                     }
                     .sheet(item: $activeQuickActionSheet) { sheet in

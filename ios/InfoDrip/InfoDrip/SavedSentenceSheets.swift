@@ -4,6 +4,7 @@ struct SavedSentenceListSheet: View {
     let documentID: Int
     let documentTitle: String
     let onLoad: (Int) async throws -> BackendDocumentStudyRecord
+    let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
     @State private var state: SavedSentenceLoadState = .idle
     @State private var activeDetailSnapshot: SavedSentenceDetailSnapshot?
@@ -23,7 +24,10 @@ struct SavedSentenceListSheet: View {
                 }
         }
         .sheet(item: $activeDetailSnapshot) { snapshot in
-            SavedSentenceDetailSheet(snapshot: snapshot)
+            SavedSentenceDetailSheet(
+                snapshot: snapshot,
+                onSaveQuizAttempt: onSaveQuizAttempt
+            )
         }
         .task {
             guard case .idle = state else {
@@ -326,7 +330,9 @@ private struct SavedSentenceCard: View {
 
 private struct SavedSentenceDetailSheet: View {
     let snapshot: SavedSentenceDetailSnapshot
+    let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
+    @State private var activeQuizStudySnapshot: SavedSentenceQuizStudySnapshot?
 
     var body: some View {
         NavigationStack {
@@ -352,6 +358,12 @@ private struct SavedSentenceDetailSheet: View {
                     }
                 }
             }
+        }
+        .sheet(item: $activeQuizStudySnapshot) { studySnapshot in
+            QuizStudySheet(
+                quizzes: studySnapshot.quizzes,
+                onSaveAttempt: onSaveQuizAttempt
+            )
         }
     }
 
@@ -393,6 +405,13 @@ private struct SavedSentenceDetailSheet: View {
 
         if !snapshot.quizzes.isEmpty {
             StudyRecordSection(title: "퀴즈", count: snapshot.quizzes.count) {
+                Button {
+                    activeQuizStudySnapshot = SavedSentenceQuizStudySnapshot(quizzes: snapshot.quizzes)
+                } label: {
+                    Label("공부 모드 열기", systemImage: "play.circle")
+                }
+                .buttonStyle(.bordered)
+
                 ForEach(snapshot.quizzes, id: \.id) { quiz in
                     SavedSentenceDetailQuizCard(quiz: quiz)
                 }
@@ -424,6 +443,11 @@ private struct SavedSentenceDetailSheet: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
     }
+}
+
+private struct SavedSentenceQuizStudySnapshot: Identifiable {
+    let id = UUID()
+    let quizzes: [BackendQuiz]
 }
 
 private struct SavedSentenceDetailExplanationCard: View {
