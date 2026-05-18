@@ -170,7 +170,7 @@ Human Gate가 필요한 변경은 PR 본문에도 이유와 남은 판단 지점
 
 ## InfoDrip MVP Boundary
 
-InfoDrip은 개인용 local-first iPad PDF 학습 보조 앱이다.
+InfoDrip은 개인용 local-first iPad PDF reading assistant / PDF 읽기 보조 앱이다.
 
 핵심 흐름:
 
@@ -198,7 +198,7 @@ PDF upload
 - PDF 전체를 매번 LLM에 보내지 않는다.
 - LLM 요청에는 selected text와 필요한 surrounding context만 보낸다.
 - LLM output은 가능한 JSON으로 받고 validation 후 저장한다.
-- 학습 기록은 DB에 저장한다.
+- 읽기 기록, 생성 결과, quiz attempt, review-again 기록은 DB에 저장한다.
 - LLM 요청별 provider, model, token usage, latency, status, estimated cost를 기록한다.
 - Primary review UX는 `quiz_attempts`와 review-again listing/replay 중심이다.
 - `review_cards`는 backend/API capability지만 separate review card list/detail/edit/delete UX는 deferred다.

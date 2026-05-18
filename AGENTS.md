@@ -10,11 +10,11 @@ Keep this file short. Put detailed repeatable procedures in `docs/runbook/`.
 
 ### Project Identity
 
-InfoDrip is a personal iPad PDF learning assistant.
+InfoDrip is a personal local-first iPad PDF reading assistant.
 
 It helps the user read PDF documents, select passages, request LLM explanations, extract glossary terms, generate quizzes, track quiz attempts, and replay review-again quiz attempts.
 
-The project is not a generic PDF chatbot. It is a selected-text based learning workflow app that stores study activity as structured data.
+The project is not a generic PDF chatbot. It is a selected-passage based reading and understanding workflow app that stores generated results, quiz attempts, and review-again records as structured data.
 
 ### Repository
 
@@ -33,12 +33,12 @@ The MVP is a local-first iPad + backend system:
 - SQLite database
 - Backend-stored uploaded PDF files
 - Backend-extracted page text
-- Selected-text based LLM workflows
+- Selected-passage based LLM workflows
 - OpenAI-compatible LLM provider interface
 - JSON output validation before persistence
 - LLM request logging for model, token usage, latency, status, and estimated cost
 
-### Core Learning Flow
+### Core Reading Flow
 
 InfoDrip MVP focuses on this flow:
 
@@ -86,13 +86,13 @@ InfoDrip MVP is not:
 - Page text may be extracted and stored by the backend.
 - LLM responses should use JSON outputs where practical.
 - Validate LLM outputs before storing them.
-- Store user learning records in the database.
+- Store user reading records, generated results, quiz attempts, and review-again records in the database.
 - Log LLM provider, model, token usage, latency, status, and estimated cost for each LLM request.
 - Treat OCR, RAG, LLM streaming, account systems, payment, and public deployment as out of MVP unless explicitly requested.
 
 ## MVP Data Boundary
 
-The database exists to persist study records, not to create a large analytics platform.
+The database exists to persist reading records and generated results, not to create a large analytics platform.
 
 MVP persistence should focus on:
 
@@ -159,7 +159,7 @@ Rules:
 
 ## Default Scope
 
-Keep the MVP local-first.
+Keep the MVP as a local-first PDF reading assistant.
 
 Default implementation assumptions:
 
