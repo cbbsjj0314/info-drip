@@ -332,7 +332,7 @@ private struct SavedSentenceDetailSheet: View {
     let snapshot: SavedSentenceDetailSnapshot
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     @Environment(\.dismiss) private var dismiss
-    @State private var activeQuizStudySnapshot: SavedSentenceQuizStudySnapshot?
+    @State private var activeSheet: SavedSentenceDetailActiveSheet?
 
     var body: some View {
         NavigationStack {
@@ -359,11 +359,19 @@ private struct SavedSentenceDetailSheet: View {
                 }
             }
         }
-        .sheet(item: $activeQuizStudySnapshot) { studySnapshot in
-            QuizStudySheet(
-                quizzes: studySnapshot.quizzes,
-                onSaveAttempt: onSaveQuizAttempt
-            )
+        .sheet(item: $activeSheet) { activeSheet in
+            switch activeSheet {
+            case .quizStudy(let studySnapshot):
+                QuizStudySheet(
+                    quizzes: studySnapshot.quizzes,
+                    onSaveAttempt: onSaveQuizAttempt
+                )
+            case .replay(let replaySnapshot):
+                ReviewAgainReplaySheet(
+                    item: replaySnapshot.item,
+                    onSaveAttempt: onSaveQuizAttempt
+                )
+            }
         }
     }
 
@@ -406,7 +414,7 @@ private struct SavedSentenceDetailSheet: View {
         if !snapshot.quizzes.isEmpty {
             StudyRecordSection(title: "퀴즈", count: snapshot.quizzes.count) {
                 Button {
-                    activeQuizStudySnapshot = SavedSentenceQuizStudySnapshot(quizzes: snapshot.quizzes)
+                    activeSheet = .quizStudy(SavedSentenceQuizStudySnapshot(quizzes: snapshot.quizzes))
                 } label: {
                     Label("공부 모드 열기", systemImage: "play.circle")
                 }
@@ -421,10 +429,28 @@ private struct SavedSentenceDetailSheet: View {
         if !snapshot.wrongQuizAttempts.isEmpty {
             StudyRecordSection(title: "다시 보기", count: snapshot.wrongQuizAttempts.count) {
                 ForEach(snapshot.wrongQuizAttempts, id: \.id) { attempt in
-                    SavedSentenceDetailWrongAttemptCard(attempt: attempt)
+                    SavedSentenceDetailWrongAttemptCard(
+                        attempt: attempt,
+                        replayItem: replayItem(for: attempt),
+                        onReplay: { item in
+                            activeSheet = .replay(SavedSentenceReplaySnapshot(item: item))
+                        }
+                    )
                 }
             }
         }
+    }
+
+    private func replayItem(for attempt: BackendQuizAttempt) -> ReviewAgainReplayItem? {
+        guard let quiz = snapshot.quizzes.first(where: { $0.id == attempt.quizID }) else {
+            return nil
+        }
+
+        return ReviewAgainReplayItem(
+            attempt: attempt,
+            quiz: quiz,
+            pageNumber: snapshot.highlight.pageNumber
+        )
     }
 
     private var emptyResultState: some View {
@@ -448,6 +474,25 @@ private struct SavedSentenceDetailSheet: View {
 private struct SavedSentenceQuizStudySnapshot: Identifiable {
     let id = UUID()
     let quizzes: [BackendQuiz]
+}
+
+private struct SavedSentenceReplaySnapshot: Identifiable {
+    let id = UUID()
+    let item: ReviewAgainReplayItem
+}
+
+private enum SavedSentenceDetailActiveSheet: Identifiable {
+    case quizStudy(SavedSentenceQuizStudySnapshot)
+    case replay(SavedSentenceReplaySnapshot)
+
+    var id: UUID {
+        switch self {
+        case .quizStudy(let snapshot):
+            return snapshot.id
+        case .replay(let snapshot):
+            return snapshot.id
+        }
+    }
 }
 
 private struct SavedSentenceDetailExplanationCard: View {
@@ -514,6 +559,8 @@ private struct SavedSentenceDetailQuizCard: View {
 
 private struct SavedSentenceDetailWrongAttemptCard: View {
     let attempt: BackendQuizAttempt
+    let replayItem: ReviewAgainReplayItem?
+    let onReplay: (ReviewAgainReplayItem) -> Void
 
     var body: some View {
         StudyRecordCard {
@@ -522,6 +569,15 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
 
             if let feedback = savedSentenceNonBlank(attempt.feedback) {
                 bodySection(title: "피드백", text: feedback, lineLimit: 4)
+            }
+
+            if let replayItem {
+                Button {
+                    onReplay(replayItem)
+                } label: {
+                    Label("다시 풀기", systemImage: "pencil")
+                }
+                .buttonStyle(.bordered)
             }
         }
     }
