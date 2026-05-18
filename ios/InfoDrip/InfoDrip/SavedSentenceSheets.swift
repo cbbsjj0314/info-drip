@@ -17,7 +17,7 @@ struct SavedSentenceListSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("닫기") {
+                        SheetDismissIconButton(accessibilityLabel: "저장된 문장 닫기") {
                             dismiss()
                         }
                     }
@@ -353,7 +353,7 @@ private struct SavedSentenceDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
+                    SheetDismissIconButton(accessibilityLabel: "저장된 문장 상세 닫기") {
                         dismiss()
                     }
                 }

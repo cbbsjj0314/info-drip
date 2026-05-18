@@ -1,5 +1,20 @@
 import SwiftUI
 
+struct SheetDismissIconButton: View {
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tertiary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
 struct ExplanationDetailSheet: View {
     let explanation: BackendExplanation
     @Environment(\.dismiss) private var dismiss
@@ -47,7 +62,7 @@ struct ExplanationDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
+                    SheetDismissIconButton(accessibilityLabel: "설명 닫기") {
                         dismiss()
                     }
                 }
@@ -117,7 +132,7 @@ struct GlossaryDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
+                    SheetDismissIconButton(accessibilityLabel: "용어 닫기") {
                         dismiss()
                     }
                 }
@@ -198,7 +213,7 @@ struct QuestionDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
+                    SheetDismissIconButton(accessibilityLabel: "질문 닫기") {
                         dismiss()
                     }
                 }
@@ -232,7 +247,7 @@ struct DocumentStudyRecordSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("닫기") {
+                        SheetDismissIconButton(accessibilityLabel: "학습 기록 닫기") {
                             dismiss()
                         }
                     }
@@ -885,7 +900,7 @@ struct QuizStudySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
+                    SheetDismissIconButton(accessibilityLabel: "퀴즈 공부 닫기") {
                         dismiss()
                     }
                 }
@@ -959,7 +974,7 @@ struct ReviewAgainQuizAttemptsSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("닫기") {
+                        SheetDismissIconButton(accessibilityLabel: "다시 보기 목록 닫기") {
                             dismiss()
                         }
                     }
@@ -1335,7 +1350,7 @@ private struct ReviewAgainReplaySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기") {
+                    SheetDismissIconButton(accessibilityLabel: "다시 풀기 닫기") {
                         dismiss()
                     }
                 }
