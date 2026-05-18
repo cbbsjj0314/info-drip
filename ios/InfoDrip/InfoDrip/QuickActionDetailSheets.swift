@@ -104,7 +104,7 @@ struct GlossaryDetailSheet: View {
 
                                 if let sourceText = trimmedSourceText(for: glossaryTerm) {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("근거")
+                                        Text("원문")
                                             .font(.caption.weight(.semibold))
                                             .foregroundStyle(.secondary)
                                         Text(sourceText)
@@ -370,7 +370,7 @@ private struct GlossaryCollectionTermCard: View {
 
             if let sourceText = item.sourceText {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("발견된 곳")
+                    Text("원문")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(sourceText)
@@ -417,7 +417,7 @@ struct QuestionDetailSheet: View {
 
                     if let evidenceText = trimmedEvidenceText {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("근거")
+                            Text("원문")
                                 .font(.headline)
                             Text(evidenceText)
                                 .font(.subheadline)
@@ -913,7 +913,7 @@ struct StudyRecordGlossaryTermCard: View {
             bodySection(title: "정의", text: glossaryTerm.definition)
 
             if let sourceText = nonBlank(glossaryTerm.sourceText) {
-                bodySection(title: "근거", text: sourceText, lineLimit: 4)
+                bodySection(title: "원문", text: sourceText, lineLimit: 4)
             }
 
         }
@@ -930,7 +930,7 @@ struct StudyRecordUserQuestionCard: View {
             bodySection(title: "답변", text: userQuestion.answer, lineLimit: 4)
 
             if let evidenceText = nonBlank(userQuestion.evidenceText) {
-                bodySection(title: "근거", text: evidenceText, lineLimit: 4)
+                bodySection(title: "원문", text: evidenceText, lineLimit: 4)
             }
 
         }
@@ -1554,7 +1554,7 @@ private struct ReviewAgainQuizAttemptCard: View {
 
     private func sourceSection(text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("근거")
+            Text("원문")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Text(text)
@@ -1722,7 +1722,7 @@ struct ReviewAgainReplaySheet: View {
             answerBlock(title: "해설", text: item.explanation)
 
             if let sourceText = trimmedSourceText {
-                answerBlock(title: "근거", text: sourceText)
+                answerBlock(title: "원문", text: sourceText)
             }
 
             HStack(spacing: 10) {
@@ -1890,7 +1890,7 @@ private struct QuizStudyCard: View {
                 VStack(alignment: .leading, spacing: 10) {
                     answerBlock(title: "정답", text: quiz.answer)
                     answerBlock(title: "해설", text: quiz.explanation)
-                    answerBlock(title: "근거", text: quiz.sourceText)
+                    answerBlock(title: "원문", text: quiz.sourceText)
 
                     HStack(spacing: 10) {
                         Button {

@@ -255,7 +255,7 @@ struct QuickActionPanel: View {
 
                                     if let evidenceText = trimmedEvidenceText(for: userQuestion) {
                                         VStack(alignment: .leading, spacing: 4) {
-                                            Text("근거")
+                                            Text("원문")
                                                 .font(.caption.weight(.semibold))
                                                 .foregroundStyle(.secondary)
                                             Text(evidenceText)
