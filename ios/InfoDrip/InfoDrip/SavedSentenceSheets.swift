@@ -751,11 +751,7 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                     Button(role: .destructive) {
                         isConfirmingRemoval = true
                     } label: {
-                        ViewThatFits(in: .horizontal) {
-                            Label("다시 보기에서 제거", systemImage: "trash")
-                                .lineLimit(1)
-                            Image(systemName: "trash")
-                        }
+                        Image(systemName: "trash")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
