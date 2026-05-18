@@ -512,8 +512,11 @@ private struct SavedSentenceDetailSheet: View {
                     activeSheet = .quizStudy(SavedSentenceQuizStudySnapshot(quizzes: snapshot.quizzes))
                 } label: {
                     Label("공부 모드 열기", systemImage: "play.circle")
+                        .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityLabel("공부 모드 열기")
 
                 ForEach(snapshot.quizzes, id: \.id) { quiz in
                     SavedSentenceDetailQuizCard(quiz: quiz)
@@ -737,9 +740,12 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                             onReplay(replayItem)
                         } label: {
                             Label("다시 풀기", systemImage: "pencil")
+                                .lineLimit(1)
                         }
                         .buttonStyle(.bordered)
+                        .controlSize(.small)
                         .disabled(isDeleting)
+                        .accessibilityLabel("다시 풀기")
                     }
 
                     Button(role: .destructive) {
@@ -748,6 +754,7 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                         Image(systemName: "trash")
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .disabled(isDeleting)
                     .accessibilityLabel("다시 보기에서 제거")
 
@@ -756,6 +763,7 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
                             .controlSize(.small)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let removalError {
                     Label(removalError, systemImage: "exclamationmark.triangle.fill")
