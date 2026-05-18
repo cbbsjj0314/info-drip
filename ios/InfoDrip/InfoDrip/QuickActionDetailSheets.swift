@@ -757,7 +757,7 @@ struct ReviewAgainQuizAttemptsSheet: View {
     private var loadingState: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("다시 풀 퀴즈를 불러오는 중입니다.")
+            Text("다시 풀 퀴즈를 불러오는 중...")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -769,9 +769,9 @@ struct ReviewAgainQuizAttemptsSheet: View {
             Image(systemName: "arrow.counterclockwise.circle")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("다시 풀 퀴즈가 없습니다.")
+            Text("저장된 퀴즈가 없습니다.")
                 .font(.headline)
-            Text("공부 모드에서 답을 확인한 뒤 다시 풀 퀴즈에 추가하면 여기에 표시됩니다.")
+            Text("퀴즈 모드에서 답을 확인한 뒤 다시 풀 퀴즈에 추가하면 여기에 표시됩니다.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -786,7 +786,7 @@ struct ReviewAgainQuizAttemptsSheet: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.orange)
-            Text("다시 풀 퀴즈를 불러오지 못했습니다.")
+            Text("목록을 불러오지 못했습니다.")
                 .font(.headline)
             Text(message)
                 .font(.subheadline)
@@ -814,7 +814,7 @@ struct ReviewAgainQuizAttemptsSheet: View {
                     Text(documentTitle)
                         .font(.headline)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("다시 풀 퀴즈 \(attempts.count)개")
+                    Text("퀴즈 \(attempts.count)개")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -867,13 +867,13 @@ struct ReviewAgainQuizAttemptsSheet: View {
                 removeAttemptFromLoadedState(attemptID: attemptID)
                 await reloadLoadedAttemptsSilently()
             } catch BackendAPIError.quizAttemptAlreadyRemoved {
-                removalNotice = "이미 다시 풀 퀴즈에서 제거된 항목입니다."
+                removalNotice = "이미 제거된 항목입니다."
                 removeAttemptFromLoadedState(attemptID: attemptID)
                 await reloadLoadedAttemptsSilently()
             } catch BackendAPIError.quizAttemptHasReviewCards {
                 removalErrorsByAttemptID[attemptID] = "복습 카드가 연결되어 있어 제거할 수 없습니다."
             } catch {
-                removalErrorsByAttemptID[attemptID] = "다시 풀 퀴즈에서 제거하지 못했습니다."
+                removalErrorsByAttemptID[attemptID] = "제거하지 못했습니다."
             }
         }
     }
@@ -982,14 +982,14 @@ private struct ReviewAgainQuizAttemptCard: View {
                 .strokeBorder(Color(.separator), lineWidth: 0.5)
         }
         .confirmationDialog(
-            "이 풀이 기록을 다시 풀 퀴즈에서 제거할까요?",
+            "이 퀴즈를 목록에서 제거할까요?",
             isPresented: $isConfirmingRemoval,
             titleVisibility: .visible
         ) {
-            Button("다시 풀 퀴즈에서 제거", role: .destructive, action: onDelete)
+            Button("제거", role: .destructive, action: onDelete)
             Button("취소", role: .cancel) {}
         } message: {
-            Text("제거하면 이 항목은 다시 풀 퀴즈와 퀴즈 풀이 기록에서 빠집니다.")
+            Text("제거하면 다시 풀 퀴즈와 풀이 기록에서 빠집니다.")
         }
     }
 
