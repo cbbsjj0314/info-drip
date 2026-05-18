@@ -84,7 +84,7 @@ struct ReaderWorkspace: View {
                     .toolbar {
                         ToolbarItemGroup(placement: .navigationBarTrailing) {
                             Button(action: openStudyRecord) {
-                                Label("학습 기록", systemImage: "list.bullet.rectangle")
+                                Label("저장된 결과", systemImage: "list.bullet.rectangle")
                             }
                             .disabled(!canOpenStudyRecord)
 

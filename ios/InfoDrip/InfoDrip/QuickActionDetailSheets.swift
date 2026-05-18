@@ -243,11 +243,11 @@ struct DocumentStudyRecordSheet: View {
         NavigationStack {
             content
                 .background(Color(.systemGroupedBackground))
-                .navigationTitle("학습 기록")
+                .navigationTitle("저장된 결과")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        SheetDismissIconButton(accessibilityLabel: "학습 기록 닫기") {
+                        SheetDismissIconButton(accessibilityLabel: "저장된 결과 닫기") {
                             dismiss()
                         }
                     }
@@ -277,7 +277,7 @@ struct DocumentStudyRecordSheet: View {
     private var loadingState: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("학습 기록을 불러오는 중입니다.")
+            Text("저장된 결과를 불러오는 중입니다.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -289,7 +289,7 @@ struct DocumentStudyRecordSheet: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.orange)
-            Text("학습 기록을 불러오지 못했습니다.")
+            Text("저장된 결과를 불러오지 못했습니다.")
                 .font(.headline)
             Text(message)
                 .font(.subheadline)
@@ -335,7 +335,7 @@ struct DocumentStudyRecordSheet: View {
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("\(document.pageCount) pages")
+            Text("\(document.pageCount)쪽")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -401,9 +401,9 @@ struct DocumentStudyRecordSheet: View {
             Image(systemName: "tray")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("아직 저장된 학습 기록이 없습니다.")
+            Text("아직 저장된 결과가 없습니다.")
                 .font(.headline)
-            Text("문장을 선택해 하이라이트, 설명, 용어, 질문, 퀴즈를 저장하면 여기에 표시됩니다.")
+            Text("선택한 내용에서 하이라이트, 설명, 용어, 질문, 퀴즈를 저장하면 여기에 표시됩니다.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -419,7 +419,7 @@ struct DocumentStudyRecordSheet: View {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 32, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("표시할 학습 기록이 없습니다.")
+            Text("표시할 저장된 결과가 없습니다.")
                 .font(.headline)
                 .foregroundStyle(.secondary)
         }
