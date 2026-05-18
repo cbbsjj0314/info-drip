@@ -94,7 +94,7 @@ struct ReaderWorkspace: View {
                             .disabled(!canOpenGlossaryCollection)
 
                             Button(action: openReviewAgainList) {
-                                Label("다시 보기 목록", systemImage: "arrow.counterclockwise")
+                                Label("다시 풀 퀴즈", systemImage: "arrow.counterclockwise")
                             }
                             .disabled(!canOpenReviewAgainList)
                         }
