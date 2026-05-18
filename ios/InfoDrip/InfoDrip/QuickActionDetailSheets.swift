@@ -825,23 +825,12 @@ private func trimmed(_ text: String) -> String {
 struct QuizStudySheet: View {
     let quizzes: [BackendQuiz]
     let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
-    let usesCompactDismissButton: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var answersByQuizID: [Int: String] = [:]
     @State private var revealedQuizIDs: Set<Int> = []
     @State private var saveStatesByQuizID: [Int: QuizAttemptSaveState] = [:]
     @State private var failedSaveKindsByQuizID: [Int: QuizAttemptSaveKind] = [:]
     @State private var savedSelfCheckKindsByQuizID: [Int: Set<QuizAttemptSaveKind>] = [:]
-
-    init(
-        quizzes: [BackendQuiz],
-        onSaveAttempt: @escaping (Int, String, Bool?) async throws -> BackendQuizAttempt,
-        usesCompactDismissButton: Bool = false
-    ) {
-        self.quizzes = quizzes
-        self.onSaveAttempt = onSaveAttempt
-        self.usesCompactDismissButton = usesCompactDismissButton
-    }
 
     var body: some View {
         NavigationStack {
@@ -896,14 +885,8 @@ struct QuizStudySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if usesCompactDismissButton {
-                        SheetDismissIconButton(accessibilityLabel: "퀴즈 공부 닫기") {
-                            dismiss()
-                        }
-                    } else {
-                        Button("닫기") {
-                            dismiss()
-                        }
+                    Button("닫기") {
+                        dismiss()
                     }
                 }
             }
