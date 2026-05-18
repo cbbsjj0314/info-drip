@@ -493,7 +493,7 @@ struct QuickActionPanel: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("선택한 문장에서 학습 용어를 정리하고 있습니다.")
+                    Text("선택한 문장에서 용어를 정리하고 있습니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
