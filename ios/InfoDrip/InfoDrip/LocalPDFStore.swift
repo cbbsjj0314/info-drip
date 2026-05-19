@@ -312,8 +312,10 @@ enum QuestionState: Equatable {
 }
 
 struct BackendAPIClient {
-    // Simulator development default. Change this one value for a physical iPad backend host.
-    static let development = BackendAPIClient(baseURL: URL(string: "http://127.0.0.1:8000")!)
+    static let development = BackendAPIClient(baseURL: configuredDevelopmentBaseURL())
+
+    private static let backendBaseURLInfoKey = "INFODRIP_BACKEND_BASE_URL"
+    private static let fallbackDevelopmentBaseURL = URL(string: "http://127.0.0.1:8000")!
 
     let baseURL: URL
     private let session: URLSession
@@ -321,6 +323,34 @@ struct BackendAPIClient {
     init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
+    }
+
+    private static func configuredDevelopmentBaseURL(bundle: Bundle = .main) -> URL {
+        guard
+            let configuredValue = bundle.object(forInfoDictionaryKey: backendBaseURLInfoKey) as? String
+        else {
+            return fallbackDevelopmentBaseURL
+        }
+
+        let trimmedValue = configuredValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            !trimmedValue.isEmpty,
+            let url = URL(string: trimmedValue),
+            isSupportedBackendBaseURL(url)
+        else {
+            return fallbackDevelopmentBaseURL
+        }
+
+        return url
+    }
+
+    private static func isSupportedBackendBaseURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return false
+        }
+
+        return url.host?.isEmpty == false
     }
 
     func uploadDocument(fileURL: URL) async throws -> BackendDocument {
