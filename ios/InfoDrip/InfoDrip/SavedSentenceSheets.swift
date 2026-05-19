@@ -511,12 +511,12 @@ private struct SavedSentenceDetailSheet: View {
                 Button {
                     activeSheet = .quizStudy(SavedSentenceQuizStudySnapshot(quizzes: snapshot.quizzes))
                 } label: {
-                    Label("공부 모드 열기", systemImage: "play.circle")
+                    Label("퀴즈 풀기", systemImage: "play.circle")
                         .font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .accessibilityLabel("공부 모드 열기")
+                .accessibilityLabel("퀴즈 풀기")
 
                 ForEach(snapshot.quizzes, id: \.id) { quiz in
                     SavedSentenceDetailQuizCard(quiz: quiz)
@@ -616,7 +616,7 @@ private struct SavedSentenceDetailSheet: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("아직 생성된 학습 결과가 없습니다.")
+            Text("아직 생성된 결과가 없습니다.")
                 .font(.headline)
             Text("이 화면에서는 저장된 문장에 연결된 기존 결과만 보여줍니다.")
                 .font(.subheadline)
