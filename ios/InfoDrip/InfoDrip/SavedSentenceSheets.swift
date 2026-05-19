@@ -370,7 +370,7 @@ private struct SavedSentenceCard: View {
     let onShowDetail: () -> Void
 
     var body: some View {
-        StudyRecordCard {
+        SavedResultCard {
             metadataRow(left: "p. \(highlight.pageNumber)", right: highlight.createdAt)
 
             Text(highlight.selectedText)
@@ -471,7 +471,7 @@ private struct SavedSentenceDetailSheet: View {
     }
 
     private var sentenceBlock: some View {
-        StudyRecordCard {
+        SavedResultCard {
             metadataRow(left: "p. \(snapshot.highlight.pageNumber)", right: snapshot.highlight.createdAt)
 
             Text(snapshot.highlight.selectedText)
@@ -483,7 +483,7 @@ private struct SavedSentenceDetailSheet: View {
     @ViewBuilder
     private var generatedResultSections: some View {
         if !snapshot.explanations.isEmpty {
-            StudyRecordSection(title: "설명", count: snapshot.explanations.count) {
+            SavedResultSection(title: "설명", count: snapshot.explanations.count) {
                 ForEach(snapshot.explanations, id: \.id) { explanation in
                     SavedSentenceDetailExplanationCard(explanation: explanation)
                 }
@@ -491,23 +491,23 @@ private struct SavedSentenceDetailSheet: View {
         }
 
         if !snapshot.glossaryTerms.isEmpty {
-            StudyRecordSection(title: "용어", count: snapshot.glossaryTerms.count) {
+            SavedResultSection(title: "용어", count: snapshot.glossaryTerms.count) {
                 ForEach(snapshot.glossaryTerms, id: \.id) { glossaryTerm in
-                    StudyRecordGlossaryTermCard(glossaryTerm: glossaryTerm)
+                    SavedResultGlossaryTermCard(glossaryTerm: glossaryTerm)
                 }
             }
         }
 
         if !snapshot.userQuestions.isEmpty {
-            StudyRecordSection(title: "질문", count: snapshot.userQuestions.count) {
+            SavedResultSection(title: "질문", count: snapshot.userQuestions.count) {
                 ForEach(snapshot.userQuestions, id: \.id) { userQuestion in
-                    StudyRecordUserQuestionCard(userQuestion: userQuestion)
+                    SavedResultUserQuestionCard(userQuestion: userQuestion)
                 }
             }
         }
 
         if !snapshot.quizzes.isEmpty {
-            StudyRecordSection(title: "퀴즈", count: snapshot.quizzes.count) {
+            SavedResultSection(title: "퀴즈", count: snapshot.quizzes.count) {
                 Button {
                     activeSheet = .quizStudy(SavedSentenceQuizStudySnapshot(quizzes: snapshot.quizzes))
                 } label: {
@@ -525,7 +525,7 @@ private struct SavedSentenceDetailSheet: View {
         }
 
         if !wrongQuizAttempts.isEmpty {
-            StudyRecordSection(title: "다시 풀 퀴즈", count: wrongQuizAttempts.count) {
+            SavedResultSection(title: "다시 풀 퀴즈", count: wrongQuizAttempts.count) {
                 ForEach(wrongQuizAttempts, id: \.id) { attempt in
                     SavedSentenceDetailWrongAttemptCard(
                         attempt: attempt,
@@ -657,7 +657,7 @@ private struct SavedSentenceDetailExplanationCard: View {
     let explanation: BackendStudyRecordExplanation
 
     var body: some View {
-        StudyRecordCard {
+        SavedResultCard {
             metadataRow(left: "설명", right: explanation.createdAt)
 
             Text(explanation.summary)
@@ -688,7 +688,7 @@ private struct SavedSentenceDetailQuizCard: View {
     let quiz: BackendQuiz
 
     var body: some View {
-        StudyRecordCard {
+        SavedResultCard {
             metadataRow(left: displayTitle(for: quiz.quizType), right: quiz.createdAt)
             bodySection(title: "문제", text: quiz.question)
             bodySection(title: "정답", text: quiz.answer, lineLimit: 3)
@@ -725,7 +725,7 @@ private struct SavedSentenceDetailWrongAttemptCard: View {
     @State private var isConfirmingRemoval = false
 
     var body: some View {
-        StudyRecordCard {
+        SavedResultCard {
             metadataRow(left: "풀이 기록", right: attempt.createdAt)
             bodySection(title: "내 답안", text: attempt.userAnswer)
 
