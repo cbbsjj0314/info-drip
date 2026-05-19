@@ -600,7 +600,7 @@ struct QuizStudySheet: View {
                             .foregroundStyle(.secondary)
                         Text("생성된 퀴즈가 없습니다.")
                             .font(.headline)
-                        Text("선택한 문장에서 퀴즈를 먼저 생성한 뒤 공부 모드를 열 수 있습니다.")
+                        Text("선택한 문장에서 퀴즈를 먼저 생성한 뒤 퀴즈를 풀 수 있습니다.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
