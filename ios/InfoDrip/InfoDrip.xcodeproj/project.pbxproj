@@ -30,6 +30,9 @@
 		8B3F4A1A2C1A0001000A0001 /* QuickActionDetailSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionDetailSheets.swift; sourceTree = "<group>"; };
 		8B3F4A1F2C1A0001000A0001 /* SavedSentenceSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedSentenceSheets.swift; sourceTree = "<group>"; };
 		8B3F4A212C1A0001000A0001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8B3F4A222C1A0001000A0001 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		8B3F4A232C1A0001000A0001 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		8B3F4A242C1A0001000A0001 /* Local.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig.example; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -46,6 +49,7 @@
 		8B3F49F92C1A0001000A0001 = {
 			isa = PBXGroup;
 			children = (
+				8B3F4A252C1A0001000A0001 /* Config */,
 				8B3F4A082C1A0001000A0001 /* InfoDrip */,
 				8B3F4A032C1A0001000A0001 /* Products */,
 			);
@@ -74,6 +78,16 @@
 				8B3F4A0D2C1A0001000A0001 /* Assets.xcassets */,
 			);
 			path = InfoDrip;
+			sourceTree = "<group>";
+		};
+		8B3F4A252C1A0001000A0001 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				8B3F4A222C1A0001000A0001 /* Debug.xcconfig */,
+				8B3F4A232C1A0001000A0001 /* Release.xcconfig */,
+				8B3F4A242C1A0001000A0001 /* Local.xcconfig.example */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -276,15 +290,14 @@
 		};
 		8B3F4A152C1A0001000A0001 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8B3F4A222C1A0001000A0001 /* Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"InfoDrip/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFODRIP_BACKEND_BASE_URL = "http://127.0.0.1:8000";
 				INFOPLIST_FILE = InfoDrip/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -305,14 +318,13 @@
 		};
 		8B3F4A162C1A0001000A0001 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8B3F4A232C1A0001000A0001 /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"InfoDrip/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
-				INFODRIP_BACKEND_BASE_URL = "http://127.0.0.1:8000";
 				INFOPLIST_FILE = InfoDrip/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
