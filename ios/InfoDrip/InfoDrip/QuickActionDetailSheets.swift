@@ -456,7 +456,7 @@ struct QuestionDetailSheet: View {
     }
 }
 
-struct StudyRecordSection<Content: View>: View {
+struct SavedResultSection<Content: View>: View {
     let title: String
     let count: Int
     let content: Content
@@ -485,11 +485,11 @@ struct StudyRecordSection<Content: View>: View {
     }
 }
 
-struct StudyRecordGlossaryTermCard: View {
+struct SavedResultGlossaryTermCard: View {
     let glossaryTerm: BackendGlossaryTerm
 
     var body: some View {
-        StudyRecordCard {
+        SavedResultCard {
             metadataRow(left: glossaryTerm.term, right: glossaryTerm.createdAt)
             bodySection(title: "정의", text: glossaryTerm.definition)
 
@@ -501,11 +501,11 @@ struct StudyRecordGlossaryTermCard: View {
     }
 }
 
-struct StudyRecordUserQuestionCard: View {
+struct SavedResultUserQuestionCard: View {
     let userQuestion: BackendUserQuestion
 
     var body: some View {
-        StudyRecordCard {
+        SavedResultCard {
             metadataRow(left: "질문 기록", right: userQuestion.createdAt)
             bodySection(title: "내 질문", text: userQuestion.question)
             bodySection(title: "답변", text: userQuestion.answer, lineLimit: 4)
@@ -518,7 +518,7 @@ struct StudyRecordUserQuestionCard: View {
     }
 }
 
-struct StudyRecordCard<Content: View>: View {
+struct SavedResultCard<Content: View>: View {
     let content: Content
 
     init(@ViewBuilder content: () -> Content) {
