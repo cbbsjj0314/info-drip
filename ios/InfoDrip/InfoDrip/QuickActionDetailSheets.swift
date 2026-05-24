@@ -1237,8 +1237,8 @@ struct ReviewAgainReplaySheet: View {
         switch saveState {
         case .idle, .saving:
             EmptyView()
-        case .saved(let attempt, let kind):
-            Label(savedMessage(for: attempt, kind: kind), systemImage: "checkmark.circle.fill")
+        case .saved(let attempt, _):
+            Label(savedCorrectReplayMessage(for: attempt), systemImage: "checkmark.circle.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.green)
         case .failed(let message):
@@ -1266,14 +1266,6 @@ struct ReviewAgainReplaySheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isSelfCheckDisabled(.correct))
-
-                Button {
-                    saveAttempt(isCorrect: false, kind: .reviewAgain)
-                } label: {
-                    Label("다시 풀 퀴즈에 추가", systemImage: "arrow.counterclockwise")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSelfCheckDisabled(.reviewAgain))
             }
 
             saveStatusView
@@ -1329,24 +1321,12 @@ struct ReviewAgainReplaySheet: View {
         }
     }
 
-    private func savedMessage(for attempt: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+    private func savedCorrectReplayMessage(for attempt: BackendQuizAttempt) -> String {
         if attempt.userAnswer == unknownQuizAnswerText {
-            switch kind {
-            case .answerOnly, .correct:
-                return "모름으로 저장됨"
-            case .reviewAgain:
-                return "모름으로 다시 풀 퀴즈에 추가됨"
-            }
+            return "모름으로 저장됨"
         }
 
-        switch kind {
-        case .answerOnly:
-            return "저장됨"
-        case .correct:
-            return "맞음으로 저장됨"
-        case .reviewAgain:
-            return "다시 풀 퀴즈에 추가됨"
-        }
+        return "맞음으로 저장됨"
     }
 
     private func displayTitle(for quizType: String) -> String {
