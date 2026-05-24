@@ -33,4 +33,5 @@ backend/**/*.sqlite3
 .xcode-derived/
 DerivedData/
 build/
+ios/InfoDrip/InfoDrip.xcodeproj/project.xcworkspace/contents.xcworkspacedata
 ios/InfoDrip/Config/Local.xcconfig
