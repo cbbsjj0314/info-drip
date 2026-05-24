@@ -50,19 +50,7 @@ struct QuickActionPanel: View {
                 .accessibilityLabel("퀵 액션 닫기")
             }
 
-            HStack(spacing: 10) {
-                ForEach(QuickAction.allCases) { action in
-                    Button {
-                        onSelect(action)
-                    } label: {
-                        Label(action.title, systemImage: action.systemImage)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(isDisabled(action))
-                }
-            }
+            quickActionRow
 
             if let statusMessage {
                 Text(statusMessage)
@@ -200,6 +188,41 @@ struct QuickActionPanel: View {
         case .idle, .saving:
             return .secondary
         }
+    }
+
+    private var quickActionRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                ForEach(QuickAction.allCases) { action in
+                    quickActionButton(for: action, showsTitle: true)
+                }
+            }
+
+            HStack(spacing: 10) {
+                ForEach(QuickAction.allCases) { action in
+                    quickActionButton(for: action, showsTitle: false)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func quickActionButton(for action: QuickAction, showsTitle: Bool) -> some View {
+        Button {
+            onSelect(action)
+        } label: {
+            if showsTitle {
+                Label(action.title, systemImage: action.systemImage)
+                    .fixedSize(horizontal: true, vertical: false)
+            } else {
+                Image(systemName: action.systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(isDisabled(action))
+        .accessibilityLabel(action.title)
     }
 
     @ViewBuilder
