@@ -417,7 +417,7 @@ struct QuickActionPanel: View {
 
     private var studyQuizMenuTitle: String {
         if let selectedAvailableQuizCount {
-            return "문제 수: \(selectedAvailableQuizCount)문제"
+            return "문제 수: \(selectedAvailableQuizCount)개"
         }
 
         return "문제 수 선택"
