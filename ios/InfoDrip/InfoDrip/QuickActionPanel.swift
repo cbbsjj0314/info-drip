@@ -27,6 +27,7 @@ struct QuickActionPanel: View {
     let onClose: () -> Void
     @State private var questionText = ""
     @State private var submittedQuestionText = ""
+    @State private var selectedQuizCount: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -71,6 +72,9 @@ struct QuickActionPanel: View {
                 .strokeBorder(Color(.separator), lineWidth: 0.5)
         }
         .frame(maxWidth: 620)
+        .onChange(of: selectedText) { _ in
+            selectedQuizCount = nil
+        }
     }
 
     private var statusMessage: String? {
@@ -360,22 +364,27 @@ struct QuickActionPanel: View {
                     .controlSize(.regular)
                 } else {
                     Button {
-                        onRequestQuiz()
+                        submitQuizGeneration()
                     } label: {
-                        Label("퀴즈 만들기", systemImage: "sparkles")
+                        Label(quizGenerationButtonTitle, systemImage: "sparkles")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
                     .disabled(!canRunQuickAction)
                 }
 
-                if !availableQuizCountOptions.isEmpty {
+                if quizzes.isEmpty && !availableQuizCountOptions.isEmpty {
                     studyQuizMenu
                 }
             }
 
             if availableQuizCountOptions.isEmpty {
                 Text("선택한 내용이 적어서 기본 2문제로 생성합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if quizzes.isEmpty {
+                Text(quizCountHelperText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -387,15 +396,55 @@ struct QuickActionPanel: View {
         Menu {
             ForEach(availableQuizCountOptions, id: \.self) { count in
                 Button("\(count)문제") {
-                    onStudyQuiz(count)
+                    selectedQuizCount = count
                 }
             }
         } label: {
-            Label("문제 수", systemImage: "list.number")
+            Label(studyQuizMenuTitle, systemImage: "list.number")
         }
         .buttonStyle(.bordered)
         .controlSize(.regular)
         .disabled(!canRunQuickAction)
+    }
+
+    private var selectedAvailableQuizCount: Int? {
+        guard let selectedQuizCount, availableQuizCountOptions.contains(selectedQuizCount) else {
+            return nil
+        }
+
+        return selectedQuizCount
+    }
+
+    private var studyQuizMenuTitle: String {
+        if let selectedAvailableQuizCount {
+            return "문제 수: \(selectedAvailableQuizCount)문제"
+        }
+
+        return "문제 수 선택"
+    }
+
+    private var quizGenerationButtonTitle: String {
+        availableQuizCountOptions.isEmpty ? "퀴즈 만들기" : "생성하기"
+    }
+
+    private var quizCountHelperText: String {
+        if let selectedAvailableQuizCount {
+            return "\(selectedAvailableQuizCount)문제로 생성합니다. 생성 전까지 문제 수를 바꿀 수 있습니다."
+        }
+
+        return "문제 수를 고르지 않으면 기본 문제 수로 생성합니다."
+    }
+
+    private func submitQuizGeneration() {
+        guard canRunQuickAction else {
+            return
+        }
+
+        if let selectedAvailableQuizCount {
+            onStudyQuiz(selectedAvailableQuizCount)
+        } else {
+            onRequestQuiz()
+        }
     }
 
     private var availableQuizCountOptions: [Int] {
