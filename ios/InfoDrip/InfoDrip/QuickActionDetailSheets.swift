@@ -580,6 +580,20 @@ private func trimmed(_ text: String) -> String {
     text.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+private let unknownQuizAnswerText = "모름"
+
+private func normalizedQuizAttemptSubmission(
+    answer: String,
+    isCorrect: Bool?
+) -> (userAnswer: String, isCorrect: Bool?) {
+    let normalizedAnswer = trimmed(answer)
+    if normalizedAnswer.isEmpty {
+        return (unknownQuizAnswerText, false)
+    }
+
+    return (normalizedAnswer, isCorrect)
+}
+
 struct QuizStudySheet: View {
     let quizzes: [BackendQuiz]
     let onSaveAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
@@ -670,19 +684,16 @@ struct QuizStudySheet: View {
     }
 
     private func saveAttempt(for quiz: BackendQuiz, isCorrect: Bool?, kind: QuizAttemptSaveKind) {
-        let normalizedAnswer = answersByQuizID[quiz.id, default: ""]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedAnswer.isEmpty else {
-            saveStatesByQuizID[quiz.id] = .failed("답안을 입력한 뒤 저장할 수 있습니다.")
-            failedSaveKindsByQuizID[quiz.id] = kind
-            return
-        }
+        let submission = normalizedQuizAttemptSubmission(
+            answer: answersByQuizID[quiz.id, default: ""],
+            isCorrect: isCorrect
+        )
 
         saveStatesByQuizID[quiz.id] = .saving
 
         Task { @MainActor in
             do {
-                let attempt = try await onSaveAttempt(quiz.id, normalizedAnswer, isCorrect)
+                let attempt = try await onSaveAttempt(quiz.id, submission.userAnswer, submission.isCorrect)
                 saveStatesByQuizID[quiz.id] = .saved(attempt, kind)
                 failedSaveKindsByQuizID[quiz.id] = nil
                 if kind == .correct || kind == .reviewAgain {
@@ -1198,6 +1209,10 @@ struct ReviewAgainReplaySheet: View {
                     RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(Color(.separator), lineWidth: 0.5)
                 }
+
+            Text("비워 두면 모름으로 제출됩니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -1287,21 +1302,25 @@ struct ReviewAgainReplaySheet: View {
             return true
         }
 
+        if kind == .correct && answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+
         return savedSelfCheckKinds.contains(kind)
     }
 
     private func saveAttempt(isCorrect: Bool, kind: QuizAttemptSaveKind) {
-        let normalizedAnswer = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedAnswer.isEmpty else {
-            saveState = .failed("답안을 입력한 뒤 저장할 수 있습니다.")
-            return
-        }
+        let submission = normalizedQuizAttemptSubmission(answer: answer, isCorrect: isCorrect)
 
         saveState = .saving
 
         Task { @MainActor in
             do {
-                let savedAttempt = try await onSaveAttempt(item.quizID, normalizedAnswer, isCorrect)
+                let savedAttempt = try await onSaveAttempt(
+                    item.quizID,
+                    submission.userAnswer,
+                    submission.isCorrect
+                )
                 saveState = .saved(savedAttempt, kind)
                 savedSelfCheckKinds.insert(kind)
             } catch {
@@ -1310,7 +1329,16 @@ struct ReviewAgainReplaySheet: View {
         }
     }
 
-    private func savedMessage(for _: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+    private func savedMessage(for attempt: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+        if attempt.userAnswer == unknownQuizAnswerText {
+            switch kind {
+            case .answerOnly, .correct:
+                return "모름으로 저장됨"
+            case .reviewAgain:
+                return "모름으로 다시 풀 퀴즈에 추가됨"
+            }
+        }
+
         switch kind {
         case .answerOnly:
             return "저장됨"
@@ -1380,6 +1408,10 @@ private struct QuizStudyCard: View {
                         RoundedRectangle(cornerRadius: 8)
                             .strokeBorder(Color(.separator), lineWidth: 0.5)
                     }
+
+                Text("비워 두면 모름으로 제출됩니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 10) {
@@ -1513,6 +1545,10 @@ private struct QuizStudyCard: View {
             return true
         }
 
+        if kind == .correct && answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+
         return savedSelfCheckKinds.contains(kind)
     }
 
@@ -1521,10 +1557,19 @@ private struct QuizStudyCard: View {
             return true
         }
 
-        return answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return false
     }
 
-    private func savedMessage(for _: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+    private func savedMessage(for attempt: BackendQuizAttempt, kind: QuizAttemptSaveKind) -> String {
+        if attempt.userAnswer == unknownQuizAnswerText {
+            switch kind {
+            case .answerOnly, .correct:
+                return "모름으로 저장됨"
+            case .reviewAgain:
+                return "모름으로 다시 풀 퀴즈에 추가됨"
+            }
+        }
+
         switch kind {
         case .answerOnly:
             return "저장됨"
