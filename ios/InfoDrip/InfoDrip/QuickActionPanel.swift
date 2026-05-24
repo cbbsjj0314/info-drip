@@ -4,8 +4,6 @@ struct QuickActionPanel: View {
     private let loadedResultPreviewMaxHeight: CGFloat = 160
     private let maxPreviewKeyPoints = 2
     private let maxPreviewGlossaryTerms = 2
-    private let titledQuickActionRowMinWidth: CGFloat = 520
-    private let quickActionRowHeight: CGFloat = 44
 
     let selectedAction: QuickAction?
     let highlightSaveState: HighlightSaveState
@@ -193,16 +191,20 @@ struct QuickActionPanel: View {
     }
 
     private var quickActionRow: some View {
-        GeometryReader { proxy in
-            let showsTitle = proxy.size.width >= titledQuickActionRowMinWidth
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                ForEach(QuickAction.allCases) { action in
+                    quickActionButton(for: action, showsTitle: true)
+                }
+            }
 
             HStack(spacing: 10) {
                 ForEach(QuickAction.allCases) { action in
-                    quickActionButton(for: action, showsTitle: showsTitle)
+                    quickActionButton(for: action, showsTitle: false)
                 }
             }
         }
-        .frame(height: quickActionRowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func quickActionButton(for action: QuickAction, showsTitle: Bool) -> some View {
@@ -211,7 +213,7 @@ struct QuickActionPanel: View {
         } label: {
             if showsTitle {
                 Label(action.title, systemImage: action.systemImage)
-                    .frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: true, vertical: false)
             } else {
                 Image(systemName: action.systemImage)
                     .frame(maxWidth: .infinity)
