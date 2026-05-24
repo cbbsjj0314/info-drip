@@ -17,7 +17,7 @@ struct ImportedPDF: Identifiable, Equatable {
     }
 }
 
-struct BackendDocument: Equatable, Decodable {
+struct BackendDocument: Equatable, Codable {
     let id: Int
     let title: String
     let originalFilename: String
@@ -33,6 +33,16 @@ struct BackendDocument: Equatable, Decodable {
         case pageCount = "page_count"
         case createdAt = "created_at"
     }
+}
+
+private struct LastOpenedDocumentSessionV1: Codable {
+    static let currentVersion = 1
+
+    let version: Int
+    let importedPDFFileName: String
+    let title: String
+    let importedAt: Date
+    let backendDocument: BackendDocument
 }
 
 struct BackendHighlight: Equatable, Decodable {
@@ -750,16 +760,21 @@ final class LocalPDFStore: ObservableObject {
     @Published private(set) var questionState: QuestionState = .idle
     @Published private(set) var lastSavedHighlight: BackendHighlight?
 
-    private let apiClient: BackendAPIClient
+    private static let lastOpenedDocumentSessionKey = "infoDrip.lastOpenedDocumentSession.v1"
 
-    init(apiClient: BackendAPIClient = .development) {
+    private let apiClient: BackendAPIClient
+    private let userDefaults: UserDefaults
+
+    init(apiClient: BackendAPIClient = .development, userDefaults: UserDefaults = .standard) {
         self.apiClient = apiClient
+        self.userDefaults = userDefaults
+        restoreLastOpenedDocumentSessionIfAvailable()
     }
 
     func importPDF(from sourceURL: URL) throws {
         let destinationURL = try copyIntoAppDocuments(sourceURL)
         let document = ImportedPDF(
-            title: destinationURL.deletingPathExtension().lastPathComponent,
+            title: sourceURL.deletingPathExtension().lastPathComponent,
             url: destinationURL
         )
         currentDocument = document
@@ -993,6 +1008,12 @@ final class LocalPDFStore: ObservableObject {
 
             currentDocument?.backendDocument = backendDocument
             uploadState = .uploaded(backendDocument)
+            persistLastOpenedDocumentSession(
+                fileURL: fileURL,
+                title: currentDocument?.title ?? backendDocument.title,
+                importedAt: currentDocument?.importedAt ?? Date(),
+                backendDocument: backendDocument
+            )
         } catch {
             guard currentDocument?.id == documentID else {
                 return
@@ -1171,10 +1192,125 @@ final class LocalPDFStore: ObservableObject {
         return highlight
     }
 
+    private func restoreLastOpenedDocumentSessionIfAvailable() {
+        guard let data = userDefaults.data(forKey: Self.lastOpenedDocumentSessionKey) else {
+            return
+        }
+
+        do {
+            let session = try JSONDecoder().decode(LastOpenedDocumentSessionV1.self, from: data)
+            guard
+                session.version == LastOpenedDocumentSessionV1.currentVersion,
+                let fileURL = try restoredImportedPDFURL(fileName: session.importedPDFFileName)
+            else {
+                clearPersistedLastOpenedDocumentSession()
+                return
+            }
+
+            let document = ImportedPDF(
+                title: session.title,
+                url: fileURL,
+                importedAt: session.importedAt,
+                backendDocument: session.backendDocument
+            )
+            currentDocument = document
+            uploadState = .uploaded(session.backendDocument)
+        } catch {
+            clearPersistedLastOpenedDocumentSession()
+        }
+    }
+
+    private func persistLastOpenedDocumentSession(
+        fileURL: URL,
+        title: String,
+        importedAt: Date,
+        backendDocument: BackendDocument
+    ) {
+        do {
+            guard let fileName = try importedPDFFileNameIfAppOwned(fileURL) else {
+                return
+            }
+
+            let session = LastOpenedDocumentSessionV1(
+                version: LastOpenedDocumentSessionV1.currentVersion,
+                importedPDFFileName: fileName,
+                title: title,
+                importedAt: importedAt,
+                backendDocument: backendDocument
+            )
+            let data = try JSONEncoder().encode(session)
+            userDefaults.set(data, forKey: Self.lastOpenedDocumentSessionKey)
+        } catch {
+            return
+        }
+    }
+
+    private func clearPersistedLastOpenedDocumentSession() {
+        userDefaults.removeObject(forKey: Self.lastOpenedDocumentSessionKey)
+    }
+
+    private func restoredImportedPDFURL(fileName: String) throws -> URL? {
+        guard let safeFileName = safeImportedPDFFileName(fileName) else {
+            return nil
+        }
+
+        let fileManager = FileManager.default
+        let importDirectory = try importedPDFDirectory(fileManager: fileManager)
+        let fileURL = importDirectory.appendingPathComponent(safeFileName, isDirectory: false)
+        let resolvedImportDirectoryPath = importDirectory
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        let resolvedParentPath = fileURL
+            .resolvingSymlinksInPath()
+            .deletingLastPathComponent()
+            .standardizedFileURL
+            .path
+
+        guard resolvedParentPath == resolvedImportDirectoryPath,
+              fileManager.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
+
+        return fileURL
+    }
+
+    private func importedPDFFileNameIfAppOwned(_ fileURL: URL) throws -> String? {
+        guard let safeFileName = safeImportedPDFFileName(fileURL.lastPathComponent) else {
+            return nil
+        }
+
+        let importDirectory = try importedPDFDirectory(fileManager: .default)
+        let importDirectoryPath = importDirectory.standardizedFileURL.path
+        let fileParentPath = fileURL.deletingLastPathComponent().standardizedFileURL.path
+
+        guard fileParentPath == importDirectoryPath else {
+            return nil
+        }
+
+        return safeFileName
+    }
+
+    private func safeImportedPDFFileName(_ fileName: String) -> String? {
+        let trimmedFileName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedFileName.isEmpty,
+              trimmedFileName != ".",
+              trimmedFileName != "..",
+              trimmedFileName == (trimmedFileName as NSString).lastPathComponent else {
+            return nil
+        }
+
+        return trimmedFileName
+    }
+
     private func copyIntoAppDocuments(_ sourceURL: URL) throws -> URL {
         let fileManager = FileManager.default
         let importDirectory = try importedPDFDirectory(fileManager: fileManager)
-        let destinationURL = importDirectory.appendingPathComponent(sourceURL.lastPathComponent)
+        let destinationURL = uniqueImportedPDFDestinationURL(
+            for: sourceURL.lastPathComponent,
+            in: importDirectory,
+            fileManager: fileManager
+        )
 
         let canAccess = sourceURL.startAccessingSecurityScopedResource()
         defer {
@@ -1183,12 +1319,38 @@ final class LocalPDFStore: ObservableObject {
             }
         }
 
-        if fileManager.fileExists(atPath: destinationURL.path) {
-            try fileManager.removeItem(at: destinationURL)
-        }
-
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
         return destinationURL
+    }
+
+    private func uniqueImportedPDFDestinationURL(
+        for fileName: String,
+        in importDirectory: URL,
+        fileManager: FileManager
+    ) -> URL {
+        let safeFileName = safeImportedPDFFileName(fileName) ?? "ImportedPDF.pdf"
+        let initialURL = importDirectory.appendingPathComponent(safeFileName, isDirectory: false)
+        guard fileManager.fileExists(atPath: initialURL.path) else {
+            return initialURL
+        }
+
+        let fileExtension = (safeFileName as NSString).pathExtension
+        let baseName = (safeFileName as NSString).deletingPathExtension
+        let nonEmptyBaseName = baseName.isEmpty ? "ImportedPDF" : baseName
+
+        while true {
+            let uniqueFileName: String
+            if fileExtension.isEmpty {
+                uniqueFileName = "\(nonEmptyBaseName)-\(UUID().uuidString)"
+            } else {
+                uniqueFileName = "\(nonEmptyBaseName)-\(UUID().uuidString).\(fileExtension)"
+            }
+
+            let candidateURL = importDirectory.appendingPathComponent(uniqueFileName, isDirectory: false)
+            if !fileManager.fileExists(atPath: candidateURL.path) {
+                return candidateURL
+            }
+        }
     }
 
     private func importedPDFDirectory(fileManager: FileManager) throws -> URL {
