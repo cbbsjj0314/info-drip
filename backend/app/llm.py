@@ -867,9 +867,10 @@ class OpenAICompatibleLLMProvider:
                     "Inside the existing summary and key_points string values only, "
                     "use concise lightweight Markdown when helpful for readability: "
                     "short paragraphs, simple bullet lists, **bold** for key terms, "
-                    "and inline code for code-like terms. Do not use headings, "
-                    "tables, HTML, nested lists, long boilerplate, or excessive "
-                    "bolding. "
+                    "and inline code for code-like terms. Use paragraph breaks or "
+                    "simple bullets instead of one dense paragraph when the output "
+                    "has multiple ideas. Do not use headings, tables, HTML, nested "
+                    "lists, long boilerplate, or excessive bolding. "
                     f"{KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION}"
                 ),
             },
@@ -1030,9 +1031,10 @@ class OpenAICompatibleLLMProvider:
                 "Inside the existing answer string value only, use concise "
                 "lightweight Markdown when helpful for readability: short "
                 "paragraphs, simple bullet lists, **bold** for key terms, and "
-                "inline code for code-like terms. Do not use headings, tables, "
-                "HTML, nested lists, long boilerplate, excessive bolding, or "
-                "Markdown code fences."
+                "inline code for code-like terms. Use paragraph breaks or simple "
+                "bullets instead of one dense paragraph when the answer has "
+                "multiple ideas. Do not use headings, tables, HTML, nested lists, "
+                "long boilerplate, excessive bolding, or Markdown code fences."
             ),
             KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION,
         ]

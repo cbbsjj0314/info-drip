@@ -539,6 +539,9 @@ def test_openai_compatible_provider_generates_normalized_explanation() -> None:
     assert "simple bullet lists" in system_prompt
     assert "**bold** for key terms" in system_prompt
     assert "inline code for code-like terms" in system_prompt
+    assert "Use paragraph breaks or simple bullets instead of one dense paragraph" in (
+        system_prompt
+    )
     assert "Do not use headings, tables, HTML, nested lists" in system_prompt
     assert "Selected text:\nselected concept" in call["messages"][1]["content"]
     assert "Surrounding context:\nnearby context" in call["messages"][1]["content"]
@@ -955,6 +958,9 @@ def test_openai_compatible_provider_question_answer_prompt_prefers_korean_values
     assert "simple bullet lists" in user_prompt
     assert "**bold** for key terms" in user_prompt
     assert "inline code for code-like terms" in user_prompt
+    assert "Use paragraph breaks or simple bullets instead of one dense paragraph" in (
+        user_prompt
+    )
     assert "Do not use headings, tables, HTML, nested lists" in user_prompt
     assert "Keep evidence_text faithful to the source" in user_prompt
     system_prompt = call["messages"][0]["content"]
