@@ -384,7 +384,7 @@ struct QuestionDetailSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     ReadableStudyNoteCard {
-                        readableBodySection(title: "내 질문", text: userQuestion.question, font: .body)
+                        readableBodySection(title: "내 질문", text: userQuestion.question, font: .body, rendersMarkdown: false)
                     }
 
                     ReadableStudyNoteCard {
@@ -483,7 +483,7 @@ struct SavedResultUserQuestionCard: View {
     var body: some View {
         SavedResultCard {
             metadataRow(left: "질문 기록", right: userQuestion.createdAt)
-            readableBodySection(title: "내 질문", text: userQuestion.question)
+            readableBodySection(title: "내 질문", text: userQuestion.question, rendersMarkdown: false)
             readableBodySection(title: "답변", text: userQuestion.answer, lineLimit: 4)
 
             if let evidenceText = nonBlank(userQuestion.evidenceText) {
@@ -574,18 +574,29 @@ func readableBodySection(
     text: String,
     lineLimit: Int? = nil,
     font: Font = .subheadline,
-    foregroundStyle: Color = .primary
+    foregroundStyle: Color = .primary,
+    rendersMarkdown: Bool = true
 ) -> some View {
     VStack(alignment: .leading, spacing: 7) {
         Text(title)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
-        Text(text)
-            .font(font)
-            .foregroundStyle(foregroundStyle)
-            .lineSpacing(3)
-            .lineLimit(lineLimit)
-            .fixedSize(horizontal: false, vertical: true)
+        if rendersMarkdown {
+            GeneratedMarkdownText(
+                text,
+                font: font,
+                foregroundStyle: foregroundStyle,
+                lineSpacing: 3,
+                lineLimit: lineLimit
+            )
+        } else {
+            Text(text)
+                .font(font)
+                .foregroundStyle(foregroundStyle)
+                .lineSpacing(3)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -602,13 +613,54 @@ func readableKeyPointSection(title: String, points: [String], lineLimit: Int? = 
                         .font(.caption)
                         .foregroundStyle(.green)
                         .accessibilityHidden(true)
-                    Text(point)
-                        .font(.subheadline)
-                        .lineSpacing(3)
-                        .lineLimit(lineLimit)
-                        .fixedSize(horizontal: false, vertical: true)
+                    GeneratedMarkdownText(
+                        point,
+                        font: .subheadline,
+                        lineSpacing: 3,
+                        lineLimit: lineLimit
+                    )
                 }
             }
+        }
+    }
+}
+
+struct GeneratedMarkdownText: View {
+    let text: String
+    let font: Font
+    let foregroundStyle: Color
+    let lineSpacing: CGFloat
+    let lineLimit: Int?
+
+    init(
+        _ text: String,
+        font: Font = .body,
+        foregroundStyle: Color = .primary,
+        lineSpacing: CGFloat = 0,
+        lineLimit: Int? = nil
+    ) {
+        self.text = text
+        self.font = font
+        self.foregroundStyle = foregroundStyle
+        self.lineSpacing = lineSpacing
+        self.lineLimit = lineLimit
+    }
+
+    var body: some View {
+        renderedText
+            .font(font)
+            .foregroundStyle(foregroundStyle)
+            .lineSpacing(lineSpacing)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var renderedText: some View {
+        if let attributedText = try? AttributedString(markdown: text) {
+            Text(attributedText)
+        } else {
+            Text(text)
         }
     }
 }
