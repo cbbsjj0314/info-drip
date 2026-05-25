@@ -529,6 +529,20 @@ def test_openai_compatible_provider_generates_normalized_explanation() -> None:
     assert "natural-language JSON values" in system_prompt
     assert "write Korean by default" in system_prompt
     assert "Never translate JSON field names" in system_prompt
+    assert "Return a single JSON object with exactly the expected keys" in system_prompt
+    assert "Never rename JSON fields" in system_prompt
+    assert "Do not wrap the JSON object in Markdown" in system_prompt
+    assert "Markdown code fences" in system_prompt
+    assert "summary and key_points string values only" in system_prompt
+    assert "concise lightweight Markdown" in system_prompt
+    assert "short paragraphs" in system_prompt
+    assert "simple bullet lists" in system_prompt
+    assert "**bold** for key terms" in system_prompt
+    assert "inline code for code-like terms" in system_prompt
+    assert "Use paragraph breaks or simple bullets instead of one dense paragraph" in (
+        system_prompt
+    )
+    assert "Do not use headings, tables, HTML, nested lists" in system_prompt
     assert "Selected text:\nselected concept" in call["messages"][1]["content"]
     assert "Surrounding context:\nnearby context" in call["messages"][1]["content"]
     assert "Document title:\nSample Document" in call["messages"][1]["content"]
@@ -938,10 +952,23 @@ def test_openai_compatible_provider_question_answer_prompt_prefers_korean_values
     assert "natural-language JSON values" in user_prompt
     assert "write Korean by default" in user_prompt
     assert "Never translate JSON field names" in user_prompt
-    assert "Write answer as plain text" in user_prompt
-    assert "Do not use markdown formatting inside JSON string values" in user_prompt
+    assert "answer string value only" in user_prompt
+    assert "concise lightweight Markdown" in user_prompt
+    assert "short paragraphs" in user_prompt
+    assert "simple bullet lists" in user_prompt
+    assert "**bold** for key terms" in user_prompt
+    assert "inline code for code-like terms" in user_prompt
+    assert "Use paragraph breaks or simple bullets instead of one dense paragraph" in (
+        user_prompt
+    )
+    assert "Do not use headings, tables, HTML, nested lists" in user_prompt
+    assert "Keep evidence_text faithful to the source" in user_prompt
+    system_prompt = call["messages"][0]["content"]
+    assert "Return a single JSON object with exactly the expected keys" in system_prompt
+    assert "Never rename JSON fields" in system_prompt
+    assert "Do not wrap the JSON object in Markdown" in system_prompt
+    assert "Markdown code fences" in system_prompt
     assert "**bold**" in user_prompt
-    assert "code fences" in user_prompt
     assert "test-api-key" not in json.dumps(call)
 
 

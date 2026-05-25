@@ -862,7 +862,15 @@ class OpenAICompatibleLLMProvider:
                 "content": (
                     "You are InfoDrip's explanation task provider. Return only JSON "
                     "with summary and key_points. Return a single JSON object with "
-                    "exactly the expected keys. Do not include markdown. "
+                    "exactly the expected keys. Never rename JSON fields. Do not "
+                    "wrap the JSON object in Markdown or use Markdown code fences. "
+                    "Inside the existing summary and key_points string values only, "
+                    "use concise lightweight Markdown when helpful for readability: "
+                    "short paragraphs, simple bullet lists, **bold** for key terms, "
+                    "and inline code for code-like terms. Use paragraph breaks or "
+                    "simple bullets instead of one dense paragraph when the output "
+                    "has multiple ideas. Do not use headings, tables, HTML, nested "
+                    "lists, long boilerplate, or excessive bolding. "
                     f"{KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION}"
                 ),
             },
@@ -1016,12 +1024,17 @@ class OpenAICompatibleLLMProvider:
             (
                 "For evidence_text, return only a short supporting phrase from "
                 "the selected text or same-page context. Do not return full page "
-                "context or long surrounding passages."
+                "context or long surrounding passages. Keep evidence_text faithful "
+                "to the source and do not decoratively rewrite it."
             ),
             (
-                "Write answer as plain text. Do not use markdown formatting inside "
-                "JSON string values, including **bold**, headings, bullet lists, "
-                "numbered markdown lists, or code fences."
+                "Inside the existing answer string value only, use concise "
+                "lightweight Markdown when helpful for readability: short "
+                "paragraphs, simple bullet lists, **bold** for key terms, and "
+                "inline code for code-like terms. Use paragraph breaks or simple "
+                "bullets instead of one dense paragraph when the answer has "
+                "multiple ideas. Do not use headings, tables, HTML, nested lists, "
+                "long boilerplate, excessive bolding, or Markdown code fences."
             ),
             KOREAN_FIRST_NATURAL_LANGUAGE_VALUES_INSTRUCTION,
         ]
@@ -1038,10 +1051,11 @@ class OpenAICompatibleLLMProvider:
                 "content": (
                     "You are InfoDrip's question answering task provider. Return "
                     "only JSON with answer, evidence_text, document_based, and "
-                    "needs_more_context. Do not include markdown. Keep document "
-                    "claims grounded in the provided selected text and same-page "
-                    "context. Return a single JSON object with exactly the "
-                    "expected keys."
+                    "needs_more_context. Return a single JSON object with exactly "
+                    "the expected keys. Never rename JSON fields. Do not wrap the "
+                    "JSON object in Markdown or use Markdown code fences. Keep "
+                    "document claims grounded in the provided selected text and "
+                    "same-page context."
                 ),
             },
             {"role": "user", "content": "\n\n".join(user_parts)},
