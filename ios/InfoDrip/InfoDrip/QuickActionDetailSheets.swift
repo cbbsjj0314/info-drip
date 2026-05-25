@@ -587,7 +587,8 @@ func readableBodySection(
                 font: font,
                 foregroundStyle: foregroundStyle,
                 lineSpacing: 3,
-                lineLimit: lineLimit
+                lineLimit: lineLimit,
+                preservesLineBreaks: lineLimit == nil
             )
         } else {
             Text(text)
@@ -617,7 +618,8 @@ func readableKeyPointSection(title: String, points: [String], lineLimit: Int? = 
                         point,
                         font: .subheadline,
                         lineSpacing: 3,
-                        lineLimit: lineLimit
+                        lineLimit: lineLimit,
+                        preservesLineBreaks: lineLimit == nil
                     )
                 }
             }
@@ -631,38 +633,98 @@ struct GeneratedMarkdownText: View {
     let foregroundStyle: Color
     let lineSpacing: CGFloat
     let lineLimit: Int?
+    let preservesLineBreaks: Bool
 
     init(
         _ text: String,
         font: Font = .body,
         foregroundStyle: Color = .primary,
         lineSpacing: CGFloat = 0,
-        lineLimit: Int? = nil
+        lineLimit: Int? = nil,
+        preservesLineBreaks: Bool = true
     ) {
         self.text = text
         self.font = font
         self.foregroundStyle = foregroundStyle
         self.lineSpacing = lineSpacing
         self.lineLimit = lineLimit
+        self.preservesLineBreaks = preservesLineBreaks
     }
 
     var body: some View {
-        renderedText
-            .font(font)
-            .foregroundStyle(foregroundStyle)
-            .lineSpacing(lineSpacing)
-            .lineLimit(lineLimit)
-            .fixedSize(horizontal: false, vertical: true)
+        if preservesLineBreaks {
+            renderedLines
+        } else {
+            renderedText(text)
+        }
     }
 
     @ViewBuilder
-    private var renderedText: some View {
-        if let attributedText = try? AttributedString(markdown: text) {
-            Text(attributedText)
-        } else {
-            Text(text)
+    private var renderedLines: some View {
+        let lines = text.components(separatedBy: .newlines)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Color.clear
+                        .frame(height: max(6, lineSpacing * 2))
+                } else {
+                    renderedText(line)
+                }
+            }
         }
     }
+
+    @ViewBuilder
+    private func renderedText(_ text: String) -> some View {
+        let displayText = normalizedGeneratedMarkdownDisplayText(text)
+        if let attributedText = generatedMarkdownAttributedString(displayText) {
+            Text(attributedText)
+                .font(font)
+                .foregroundStyle(foregroundStyle)
+                .lineSpacing(lineSpacing)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(displayText)
+                .font(font)
+                .foregroundStyle(foregroundStyle)
+                .lineSpacing(lineSpacing)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private func generatedMarkdownAttributedString(_ text: String) -> AttributedString? {
+    let options = AttributedString.MarkdownParsingOptions(
+        interpretedSyntax: .inlineOnlyPreservingWhitespace
+    )
+    return try? AttributedString(markdown: text, options: options)
+}
+
+private func normalizedGeneratedMarkdownDisplayText(_ text: String) -> String {
+    text
+        .components(separatedBy: .newlines)
+        .map(normalizedGeneratedMarkdownDisplayLine)
+        .joined(separator: "\n")
+}
+
+private func normalizedGeneratedMarkdownDisplayLine(_ line: String) -> String {
+    let markerCharacters: Set<Character> = ["-", "*", "+"]
+    let prefix = line.prefix { $0 == " " || $0 == "\t" }
+    let content = line.dropFirst(prefix.count)
+
+    guard let firstCharacter = content.first,
+          markerCharacters.contains(firstCharacter) else {
+        return line
+    }
+
+    let remainder = content.dropFirst()
+    guard remainder.first?.isWhitespace == true else {
+        return line
+    }
+
+    return String(prefix) + "•" + remainder
 }
 
 private func nonBlank(_ text: String?) -> String? {

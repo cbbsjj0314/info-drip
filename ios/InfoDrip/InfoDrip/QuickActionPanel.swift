@@ -275,10 +275,12 @@ struct QuickActionPanel: View {
 
                             loadedResultPreview {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text(userQuestion.answer)
-                                        .font(.subheadline)
-                                        .lineLimit(4)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    GeneratedMarkdownText(
+                                        userQuestion.answer,
+                                        font: .subheadline,
+                                        lineLimit: 4,
+                                        preservesLineBreaks: false
+                                    )
 
                                     if let evidenceText = trimmedEvidenceText(for: userQuestion) {
                                         VStack(alignment: .leading, spacing: 4) {
@@ -508,9 +510,12 @@ struct QuickActionPanel: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 let trimmedSummary = trimmed(explanation.summary)
                                 if !trimmedSummary.isEmpty {
-                                    Text(trimmedSummary)
-                                        .font(.subheadline)
-                                        .lineLimit(3)
+                                    GeneratedMarkdownText(
+                                        trimmedSummary,
+                                        font: .subheadline,
+                                        lineLimit: 3,
+                                        preservesLineBreaks: false
+                                    )
                                 }
 
                                 let previewKeyPoints = nonBlankKeyPoints(for: explanation).prefix(maxPreviewKeyPoints)
@@ -525,9 +530,12 @@ struct QuickActionPanel: View {
                                                 Image(systemName: "checkmark.circle.fill")
                                                     .font(.caption)
                                                     .foregroundStyle(.green)
-                                                Text(point)
-                                                    .font(.caption)
-                                                    .lineLimit(1)
+                                                GeneratedMarkdownText(
+                                                    point,
+                                                    font: .caption,
+                                                    lineLimit: 1,
+                                                    preservesLineBreaks: false
+                                                )
                                             }
                                         }
                                     }
