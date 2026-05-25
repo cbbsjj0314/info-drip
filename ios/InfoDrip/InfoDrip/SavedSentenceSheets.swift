@@ -660,25 +660,16 @@ private struct SavedSentenceDetailExplanationCard: View {
         SavedResultCard {
             metadataRow(left: "설명", right: explanation.createdAt)
 
-            Text(explanation.summary)
-                .font(.subheadline)
-                .fixedSize(horizontal: false, vertical: true)
+            let summary = savedSentenceTrimmed(explanation.summary)
+            if !summary.isEmpty {
+                readableBodySection(title: "요약", text: summary)
+            }
 
             let keyPoints = explanation.keyPoints
                 .map(savedSentenceTrimmed)
                 .filter { !$0.isEmpty }
             if !keyPoints.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("핵심 포인트")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    ForEach(keyPoints, id: \.self) { point in
-                        Text("• \(point)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                readableKeyPointSection(title: "핵심 포인트", points: keyPoints, lineLimit: 4)
             }
         }
     }
