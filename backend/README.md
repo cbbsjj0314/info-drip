@@ -8,7 +8,7 @@ InfoDrip MVP 백엔드는 개인용 local-first iPad PDF 학습 흐름을 위한
 - selected-text highlight 저장
 - LLM 기반 explanation/glossary/question/quiz 생성
 - quiz attempt 저장
-- review-again 조회
+- review-again 조회 및 quiz attempt 제거
 - document 단위 study record 조회
 
 iPad/client는 backend API만 호출한다.
@@ -28,7 +28,7 @@ LLM API key는 client에 두지 않고 backend 환경 변수에만 둔다.
 - `openai-compatible` provider
 - LLM JSON response 저장 전 검증
 - local DB table `llm_request_logs`에 LLM request log 저장
-- primary review flow: `quiz_attempts` 기반 review-again listing/replay
+- primary review flow: `quiz_attempts` 기반 review-again listing/replay/delete-remove
 
 `review_cards`는 backend/API 기능으로 존재하지만, 별도 review card UX는 보류되어 있다.
 
@@ -81,6 +81,9 @@ LLM request는 highlight의 `selected_text`와 필요한 same-page surrounding c
 - `GET /api/v1/quiz-attempts/review-again`
   - review-again 대상 quiz attempts 조회
   - optional query: `document_id`
+- `DELETE /api/v1/quiz-attempts/{attempt_id}`
+  - review-again 목록/detail에서 quiz attempt 제거
+  - 연결된 `review_cards`가 있으면 제거하지 않는다.
 
 보조 조회 endpoint:
 
