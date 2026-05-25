@@ -25,31 +25,15 @@ struct ExplanationDetailSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     let summary = trimmed(explanation.summary)
                     if !summary.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("요약")
-                                .font(.headline)
-                            Text(summary)
-                                .font(.body)
-                                .fixedSize(horizontal: false, vertical: true)
+                        ReadableStudyNoteCard {
+                            readableBodySection(title: "요약", text: summary, font: .body)
                         }
                     }
 
                     let keyPoints = nonBlankKeyPoints(for: explanation)
                     if !keyPoints.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("핵심 포인트")
-                                .font(.headline)
-
-                            ForEach(keyPoints, id: \.self) { point in
-                                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.caption)
-                                        .foregroundStyle(.green)
-                                    Text(point)
-                                        .font(.body)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
+                        ReadableStudyNoteCard {
+                            readableKeyPointSection(title: "핵심 포인트", points: keyPoints)
                         }
                     }
 
@@ -399,30 +383,22 @@ struct QuestionDetailSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("질문")
-                            .font(.headline)
-                        Text(userQuestion.question)
-                            .font(.body)
-                            .fixedSize(horizontal: false, vertical: true)
+                    ReadableStudyNoteCard {
+                        readableBodySection(title: "내 질문", text: userQuestion.question, font: .body)
                     }
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("답변")
-                            .font(.headline)
-                        Text(userQuestion.answer)
-                            .font(.body)
-                            .fixedSize(horizontal: false, vertical: true)
+                    ReadableStudyNoteCard {
+                        readableBodySection(title: "답변", text: userQuestion.answer, font: .body)
                     }
 
                     if let evidenceText = trimmedEvidenceText {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("원문")
-                                .font(.headline)
-                            Text(evidenceText)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        ReadableStudyNoteCard {
+                            readableBodySection(
+                                title: "근거 원문",
+                                text: evidenceText,
+                                font: .subheadline,
+                                foregroundStyle: .secondary
+                            )
                         }
                     }
 
@@ -507,11 +483,16 @@ struct SavedResultUserQuestionCard: View {
     var body: some View {
         SavedResultCard {
             metadataRow(left: "질문 기록", right: userQuestion.createdAt)
-            bodySection(title: "내 질문", text: userQuestion.question)
-            bodySection(title: "답변", text: userQuestion.answer, lineLimit: 4)
+            readableBodySection(title: "내 질문", text: userQuestion.question)
+            readableBodySection(title: "답변", text: userQuestion.answer, lineLimit: 4)
 
             if let evidenceText = nonBlank(userQuestion.evidenceText) {
-                bodySection(title: "원문", text: evidenceText, lineLimit: 4)
+                readableBodySection(
+                    title: "근거 원문",
+                    text: evidenceText,
+                    lineLimit: 4,
+                    foregroundStyle: .secondary
+                )
             }
 
         }
@@ -564,6 +545,71 @@ func bodySection(title: String, text: String, lineLimit: Int? = nil) -> some Vie
             .font(.subheadline)
             .lineLimit(lineLimit)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct ReadableStudyNoteCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color(.separator), lineWidth: 0.5)
+        }
+    }
+}
+
+func readableBodySection(
+    title: String,
+    text: String,
+    lineLimit: Int? = nil,
+    font: Font = .subheadline,
+    foregroundStyle: Color = .primary
+) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+        Text(text)
+            .font(font)
+            .foregroundStyle(foregroundStyle)
+            .lineSpacing(3)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+func readableKeyPointSection(title: String, points: [String], lineLimit: Int? = nil) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(points, id: \.self) { point in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                    Text(point)
+                        .font(.subheadline)
+                        .lineSpacing(3)
+                        .lineLimit(lineLimit)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 }
 
