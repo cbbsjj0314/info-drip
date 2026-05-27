@@ -16,6 +16,7 @@ struct ReaderWorkspace: View {
     let onQuiz: (PDFTextSelection) -> Void
     let onQuestion: (PDFTextSelection, String) -> Void
     let onStudyQuiz: (PDFTextSelection, Int) -> Void
+    let onCancelQuickActionWaiting: (QuickAction) -> Void
     let onSaveQuizAttempt: (Int, String, Bool?) async throws -> BackendQuizAttempt
     let onLoadReviewAgainAttempts: (Int) async throws -> [BackendReviewAgainQuizAttempt]
     let onDeleteQuizAttempt: (Int) async throws -> Void
@@ -57,6 +58,7 @@ struct ReaderWorkspace: View {
                                 onRequestQuiz: handleQuizRequest,
                                 onQuestion: handleQuestion,
                                 onStudyQuiz: handleStudyQuiz,
+                                onCancelWaiting: handleCancelWaiting,
                                 onOpenExplanationDetail: openExplanationDetail,
                                 onOpenGlossaryDetail: openGlossaryDetail,
                                 onOpenQuizStudy: openQuizStudy,
@@ -252,6 +254,14 @@ struct ReaderWorkspace: View {
     private func handleStudyQuiz(maxQuizzes: Int) {
         selectedQuickAction = .quiz
         onStudyQuiz(selection, maxQuizzes)
+    }
+
+    private func handleCancelWaiting() {
+        guard let selectedQuickAction else {
+            return
+        }
+
+        onCancelQuickActionWaiting(selectedQuickAction)
     }
 
     private func closeQuickActionPanel() {

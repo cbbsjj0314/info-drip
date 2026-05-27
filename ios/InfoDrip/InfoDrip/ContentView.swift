@@ -60,6 +60,20 @@ struct ContentView: View {
                         maxQuizzes: count
                     )
                 },
+                onCancelQuickActionWaiting: { action in
+                    switch action {
+                    case .explain:
+                        pdfStore.cancelExplanationWaiting()
+                    case .glossary:
+                        pdfStore.cancelGlossaryWaiting()
+                    case .quiz:
+                        pdfStore.cancelQuizWaiting()
+                    case .question:
+                        pdfStore.cancelQuestionWaiting()
+                    case .highlight:
+                        break
+                    }
+                },
                 onSaveQuizAttempt: { quizID, userAnswer, isCorrect in
                     try await pdfStore.createQuizAttempt(
                         quizID: quizID,
