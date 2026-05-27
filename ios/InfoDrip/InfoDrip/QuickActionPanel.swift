@@ -724,11 +724,11 @@ struct QuickActionPanel: View {
         Button {
             onCancelWaiting()
         } label: {
-            Label("요청 대기 중단", systemImage: "stop.circle")
+            Label("중단", systemImage: "stop.circle")
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .accessibilityLabel("요청 대기 중단")
+        .accessibilityLabel("중단")
     }
 
     private func loadedResultPreview<Content: View>(
