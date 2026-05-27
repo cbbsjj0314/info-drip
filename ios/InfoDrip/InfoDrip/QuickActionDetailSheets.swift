@@ -586,8 +586,9 @@ func readableBodySection(
                 text,
                 font: font,
                 foregroundStyle: foregroundStyle,
-                lineSpacing: 3,
-                lineLimit: lineLimit
+                lineSpacing: lineLimit == nil ? 5 : 3,
+                lineLimit: lineLimit,
+                preservesLineBreaks: lineLimit == nil
             )
         } else {
             Text(text)
@@ -616,8 +617,9 @@ func readableKeyPointSection(title: String, points: [String], lineLimit: Int? = 
                     GeneratedMarkdownText(
                         point,
                         font: .subheadline,
-                        lineSpacing: 3,
-                        lineLimit: lineLimit
+                        lineSpacing: lineLimit == nil ? 5 : 3,
+                        lineLimit: lineLimit,
+                        preservesLineBreaks: lineLimit == nil
                     )
                 }
             }
@@ -631,38 +633,185 @@ struct GeneratedMarkdownText: View {
     let foregroundStyle: Color
     let lineSpacing: CGFloat
     let lineLimit: Int?
+    let preservesLineBreaks: Bool
 
     init(
         _ text: String,
         font: Font = .body,
         foregroundStyle: Color = .primary,
         lineSpacing: CGFloat = 0,
-        lineLimit: Int? = nil
+        lineLimit: Int? = nil,
+        preservesLineBreaks: Bool = true
     ) {
         self.text = text
         self.font = font
         self.foregroundStyle = foregroundStyle
         self.lineSpacing = lineSpacing
         self.lineLimit = lineLimit
+        self.preservesLineBreaks = preservesLineBreaks
     }
 
     var body: some View {
-        renderedText
-            .font(font)
-            .foregroundStyle(foregroundStyle)
-            .lineSpacing(lineSpacing)
-            .lineLimit(lineLimit)
-            .fixedSize(horizontal: false, vertical: true)
+        if preservesLineBreaks {
+            renderedLines
+        } else {
+            renderedText(text)
+        }
     }
 
     @ViewBuilder
-    private var renderedText: some View {
-        if let attributedText = try? AttributedString(markdown: text) {
-            Text(attributedText)
-        } else {
-            Text(text)
+    private var renderedLines: some View {
+        let lines = normalizedGeneratedMarkdownDisplayLines(from: text)
+        VStack(alignment: .leading, spacing: max(4, lineSpacing)) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Color.clear
+                        .frame(height: max(10, lineSpacing * 2))
+                } else {
+                    renderedText(line)
+                }
+            }
         }
     }
+
+    @ViewBuilder
+    private func renderedText(_ text: String) -> some View {
+        let displayText = normalizedGeneratedMarkdownDisplayText(text)
+        if let attributedText = generatedMarkdownAttributedString(displayText) {
+            Text(attributedText)
+                .font(font)
+                .foregroundStyle(foregroundStyle)
+                .lineSpacing(lineSpacing)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(displayText)
+                .font(font)
+                .foregroundStyle(foregroundStyle)
+                .lineSpacing(lineSpacing)
+                .lineLimit(lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private func generatedMarkdownAttributedString(_ text: String) -> AttributedString? {
+    let options = AttributedString.MarkdownParsingOptions(
+        interpretedSyntax: .inlineOnlyPreservingWhitespace
+    )
+    return try? AttributedString(markdown: text, options: options)
+}
+
+private func normalizedGeneratedMarkdownDisplayText(_ text: String) -> String {
+    normalizedGeneratedMarkdownDisplayLines(from: text)
+        .joined(separator: "\n")
+}
+
+private func normalizedGeneratedMarkdownDisplayLines(from text: String) -> [String] {
+    text
+        .components(separatedBy: .newlines)
+        .compactMap(normalizedGeneratedMarkdownDisplayLine)
+}
+
+private func normalizedGeneratedMarkdownDisplayLine(_ line: String) -> String? {
+    let markerCharacters: Set<Character> = ["-", "*", "+"]
+    let prefix = line.prefix { $0 == " " || $0 == "\t" }
+    let content = line.dropFirst(prefix.count)
+
+    if isGeneratedMarkdownFenceLine(content) {
+        return nil
+    }
+
+    if let headingText = normalizedGeneratedMarkdownHeadingLine(prefix: prefix, content: content) {
+        return headingText
+    }
+
+    if let blockquoteText = normalizedGeneratedMarkdownBlockquoteLine(prefix: prefix, content: content) {
+        return blockquoteText
+    }
+
+    if let taskListText = normalizedGeneratedMarkdownTaskListLine(prefix: prefix, content: content) {
+        return taskListText
+    }
+
+    guard let firstCharacter = content.first,
+          markerCharacters.contains(firstCharacter) else {
+        return line
+    }
+
+    let remainder = content.dropFirst()
+    guard remainder.first?.isWhitespace == true else {
+        return line
+    }
+
+    return String(prefix) + "•" + remainder
+}
+
+private func isGeneratedMarkdownFenceLine(_ content: String.SubSequence) -> Bool {
+    content.hasPrefix("```") || content.hasPrefix("~~~")
+}
+
+private func normalizedGeneratedMarkdownHeadingLine(
+    prefix: String.SubSequence,
+    content: String.SubSequence
+) -> String? {
+    let headingMarker = content.prefix { $0 == "#" }
+    guard (1...6).contains(headingMarker.count) else {
+        return nil
+    }
+
+    let remainder = content.dropFirst(headingMarker.count)
+    guard remainder.first?.isWhitespace == true else {
+        return nil
+    }
+
+    return String(prefix) + remainder.dropFirst()
+}
+
+private func normalizedGeneratedMarkdownBlockquoteLine(
+    prefix: String.SubSequence,
+    content: String.SubSequence
+) -> String? {
+    guard content.first == ">" else {
+        return nil
+    }
+
+    let remainder = content.dropFirst()
+    if remainder.first?.isWhitespace == true {
+        return String(prefix) + remainder.dropFirst()
+    }
+
+    return String(prefix) + remainder
+}
+
+private func normalizedGeneratedMarkdownTaskListLine(
+    prefix: String.SubSequence,
+    content: String.SubSequence
+) -> String? {
+    let markerCharacters: Set<Character> = ["-", "*", "+"]
+    guard let firstCharacter = content.first,
+          markerCharacters.contains(firstCharacter) else {
+        return nil
+    }
+
+    let remainder = content.dropFirst()
+    guard remainder.first?.isWhitespace == true else {
+        return nil
+    }
+
+    let taskMarker = remainder.drop(while: { $0.isWhitespace })
+    let uncheckedMarker = taskMarker.hasPrefix("[ ]")
+    let checkedMarker = taskMarker.hasPrefix("[x]") || taskMarker.hasPrefix("[X]")
+    guard uncheckedMarker || checkedMarker else {
+        return nil
+    }
+
+    let taskText = taskMarker.dropFirst(3)
+    if taskText.first?.isWhitespace == true {
+        return String(prefix) + "• " + taskText.dropFirst()
+    }
+
+    return String(prefix) + "• " + taskText
 }
 
 private func nonBlank(_ text: String?) -> String? {
