@@ -20,6 +20,7 @@ struct QuickActionPanel: View {
     let onRequestQuiz: () -> Void
     let onQuestion: (String) -> Void
     let onStudyQuiz: (Int) -> Void
+    let onCancelWaiting: () -> Void
     let onOpenExplanationDetail: (BackendExplanation) -> Void
     let onOpenGlossaryDetail: ([BackendGlossaryTerm]) -> Void
     let onOpenQuizStudy: ([BackendQuiz]) -> Void
@@ -84,6 +85,8 @@ struct QuickActionPanel: View {
                 return highlightAvailabilityMessage
             case .loading:
                 return nil
+            case .cancelled(let message):
+                return message
             case .loaded:
                 return "설명이 준비되었습니다."
             case .failed(let message):
@@ -95,6 +98,8 @@ struct QuickActionPanel: View {
                 return highlightAvailabilityMessage
             case .loading:
                 return nil
+            case .cancelled(let message):
+                return message
             case .loaded(let glossaryTerms):
                 return "용어 정리 완료 · \(glossaryTerms.count)개"
             case .failed(let message):
@@ -106,6 +111,8 @@ struct QuickActionPanel: View {
                 return highlightAvailabilityMessage
             case .loading:
                 return nil
+            case .cancelled(let message):
+                return message
             case .loaded(let quizzes):
                 return "퀴즈가 준비되었습니다 · \(quizzes.count)개"
             case .failed(let message):
@@ -117,6 +124,8 @@ struct QuickActionPanel: View {
                 return highlightAvailabilityMessage
             case .loading:
                 return nil
+            case .cancelled(let message):
+                return message
             case .loaded(let userQuestion):
                 if shouldShowQuestionResult(userQuestion) {
                     return "답변이 준비되었습니다."
@@ -146,7 +155,7 @@ struct QuickActionPanel: View {
                 return .green
             case .failed:
                 return .red
-            case .idle, .loading:
+            case .idle, .loading, .cancelled:
                 return .secondary
             }
         }
@@ -157,7 +166,7 @@ struct QuickActionPanel: View {
                 return .green
             case .failed:
                 return .red
-            case .idle, .loading:
+            case .idle, .loading, .cancelled:
                 return .secondary
             }
         }
@@ -168,7 +177,7 @@ struct QuickActionPanel: View {
                 return .green
             case .failed:
                 return .red
-            case .idle, .loading:
+            case .idle, .loading, .cancelled:
                 return .secondary
             }
         }
@@ -179,7 +188,7 @@ struct QuickActionPanel: View {
                 return shouldShowQuestionResult(userQuestion) ? .green : .secondary
             case .failed:
                 return .red
-            case .idle, .loading:
+            case .idle, .loading, .cancelled:
                 return .secondary
             }
         }
@@ -255,13 +264,7 @@ struct QuickActionPanel: View {
 
                 switch questionState {
                 case .loading:
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("질문에 대한 답변을 준비하고 있습니다.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    loadingWaitControl("질문에 대한 답변을 준비하고 있습니다.")
                 case .loaded(let userQuestion):
                     if shouldShowQuestionResult(userQuestion) {
                         VStack(alignment: .leading, spacing: 10) {
@@ -297,7 +300,7 @@ struct QuickActionPanel: View {
                             }
                         }
                     }
-                case .failed, .idle:
+                case .cancelled, .failed, .idle:
                     EmptyView()
                 }
             }
@@ -310,13 +313,7 @@ struct QuickActionPanel: View {
             VStack(alignment: .leading, spacing: 10) {
                 switch quizState {
                 case .loading:
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("선택한 내용으로 퀴즈를 준비하고 있습니다.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    loadingWaitControl("선택한 내용으로 퀴즈를 준비하고 있습니다.")
                 case .loaded(let quizzes):
                     quizActionRow(quizzes: quizzes)
 
@@ -344,7 +341,7 @@ struct QuickActionPanel: View {
                             }
                         }
                     }
-                case .failed, .idle:
+                case .cancelled, .failed, .idle:
                     actionPrompt("선택한 내용을 바탕으로 퀴즈를 만듭니다.")
                     quizActionRow(quizzes: [])
                 }
@@ -488,13 +485,7 @@ struct QuickActionPanel: View {
         if selectedAction == .explain {
             switch explanationState {
             case .loading:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("AI가 설명을 준비하고 있습니다.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                loadingWaitControl("AI가 설명을 준비하고 있습니다.")
             case .loaded(let explanation):
                 if hasExplanationDetail(explanation) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -548,7 +539,7 @@ struct QuickActionPanel: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            case .failed, .idle:
+            case .cancelled, .failed, .idle:
                 VStack(alignment: .leading, spacing: 10) {
                     actionPrompt("선택한 내용을 쉽게 설명하고 핵심 포인트를 정리합니다.")
 
@@ -570,13 +561,7 @@ struct QuickActionPanel: View {
         if selectedAction == .glossary {
             switch glossaryState {
             case .loading:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("선택한 내용에서 용어를 정리하고 있습니다.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                loadingWaitControl("선택한 내용에서 용어를 정리하고 있습니다.")
             case .loaded(let glossaryTerms):
                 if glossaryTerms.isEmpty {
                     Text("정리된 용어가 없습니다.")
@@ -612,7 +597,7 @@ struct QuickActionPanel: View {
                         }
                     }
                 }
-            case .failed, .idle:
+            case .cancelled, .failed, .idle:
                 VStack(alignment: .leading, spacing: 10) {
                     actionPrompt("선택한 내용의 용어와 뜻을 정리합니다.")
 
@@ -708,6 +693,42 @@ struct QuickActionPanel: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func loadingWaitControl(_ message: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                loadingStatus(message)
+                stopWaitingButton
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                loadingStatus(message)
+                stopWaitingButton
+            }
+        }
+    }
+
+    private func loadingStatus(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var stopWaitingButton: some View {
+        Button {
+            onCancelWaiting()
+        } label: {
+            Label("중단", systemImage: "stop.circle")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .accessibilityLabel("중단")
     }
 
     private func loadedResultPreview<Content: View>(

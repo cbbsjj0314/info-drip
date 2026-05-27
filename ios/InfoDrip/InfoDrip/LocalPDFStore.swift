@@ -296,6 +296,7 @@ enum HighlightSaveState: Equatable {
 enum ExplanationState: Equatable {
     case idle
     case loading
+    case cancelled(String)
     case loaded(BackendExplanation)
     case failed(String)
 }
@@ -303,6 +304,7 @@ enum ExplanationState: Equatable {
 enum GlossaryState: Equatable {
     case idle
     case loading
+    case cancelled(String)
     case loaded([BackendGlossaryTerm])
     case failed(String)
 }
@@ -310,6 +312,7 @@ enum GlossaryState: Equatable {
 enum QuizState: Equatable {
     case idle
     case loading
+    case cancelled(String)
     case loaded([BackendQuiz])
     case failed(String)
 }
@@ -317,6 +320,7 @@ enum QuizState: Equatable {
 enum QuestionState: Equatable {
     case idle
     case loading
+    case cancelled(String)
     case loaded(BackendUserQuestion)
     case failed(String)
 }
@@ -761,9 +765,18 @@ final class LocalPDFStore: ObservableObject {
     @Published private(set) var lastSavedHighlight: BackendHighlight?
 
     private static let lastOpenedDocumentSessionKey = "infoDrip.lastOpenedDocumentSession.v1"
+    private static let quickActionWaitCancelledMessage = "요청 대기를 중단했습니다. 필요하면 다시 시도할 수 있습니다."
 
     private let apiClient: BackendAPIClient
     private let userDefaults: UserDefaults
+    private var explanationTask: Task<Void, Never>?
+    private var explanationTaskToken: UUID?
+    private var glossaryTask: Task<Void, Never>?
+    private var glossaryTaskToken: UUID?
+    private var quizTask: Task<Void, Never>?
+    private var quizTaskToken: UUID?
+    private var questionTask: Task<Void, Never>?
+    private var questionTaskToken: UUID?
 
     init(apiClient: BackendAPIClient = .development, userDefaults: UserDefaults = .standard) {
         self.apiClient = apiClient
@@ -846,12 +859,16 @@ final class LocalPDFStore: ObservableObject {
         }
 
         explanationState = .loading
+        explanationTask?.cancel()
+        let token = UUID()
+        explanationTaskToken = token
 
-        Task {
+        explanationTask = Task {
             await explainSelection(
                 documentID: backendDocument.id,
                 pageNumber: pageNumber,
-                selectedText: selectedText
+                selectedText: selectedText,
+                token: token
             )
         }
     }
@@ -874,12 +891,16 @@ final class LocalPDFStore: ObservableObject {
         }
 
         glossaryState = .loading
+        glossaryTask?.cancel()
+        let token = UUID()
+        glossaryTaskToken = token
 
-        Task {
+        glossaryTask = Task {
             await createGlossaryTerms(
                 documentID: backendDocument.id,
                 pageNumber: pageNumber,
-                selectedText: selectedText
+                selectedText: selectedText,
+                token: token
             )
         }
     }
@@ -902,13 +923,17 @@ final class LocalPDFStore: ObservableObject {
         }
 
         quizState = .loading
+        quizTask?.cancel()
+        let token = UUID()
+        quizTaskToken = token
 
-        Task {
+        quizTask = Task {
             await createQuizzes(
                 documentID: backendDocument.id,
                 pageNumber: pageNumber,
                 selectedText: selectedText,
-                maxQuizzes: maxQuizzes
+                maxQuizzes: maxQuizzes,
+                token: token
             )
         }
     }
@@ -937,13 +962,17 @@ final class LocalPDFStore: ObservableObject {
         }
 
         questionState = .loading
+        questionTask?.cancel()
+        let token = UUID()
+        questionTaskToken = token
 
-        Task {
+        questionTask = Task {
             await createQuestion(
                 documentID: backendDocument.id,
                 pageNumber: pageNumber,
                 selectedText: selectedText,
-                question: normalizedQuestion
+                question: normalizedQuestion,
+                token: token
             )
         }
     }
@@ -954,19 +983,75 @@ final class LocalPDFStore: ObservableObject {
     }
 
     func clearExplanationState() {
+        explanationTask = nil
+        explanationTaskToken = nil
         explanationState = .idle
     }
 
     func clearGlossaryState() {
+        glossaryTask = nil
+        glossaryTaskToken = nil
         glossaryState = .idle
     }
 
     func clearQuizState() {
+        quizTask = nil
+        quizTaskToken = nil
         quizState = .idle
     }
 
     func clearQuestionState() {
+        questionTask = nil
+        questionTaskToken = nil
         questionState = .idle
+    }
+
+    func cancelExplanationWaiting() {
+        guard case .loading = explanationState else {
+            return
+        }
+
+        explanationTask?.cancel()
+        explanationTask = nil
+        explanationTaskToken = nil
+        resetHighlightSaveStateIfWaitingForQuickAction()
+        explanationState = .cancelled(Self.quickActionWaitCancelledMessage)
+    }
+
+    func cancelGlossaryWaiting() {
+        guard case .loading = glossaryState else {
+            return
+        }
+
+        glossaryTask?.cancel()
+        glossaryTask = nil
+        glossaryTaskToken = nil
+        resetHighlightSaveStateIfWaitingForQuickAction()
+        glossaryState = .cancelled(Self.quickActionWaitCancelledMessage)
+    }
+
+    func cancelQuizWaiting() {
+        guard case .loading = quizState else {
+            return
+        }
+
+        quizTask?.cancel()
+        quizTask = nil
+        quizTaskToken = nil
+        resetHighlightSaveStateIfWaitingForQuickAction()
+        quizState = .cancelled(Self.quickActionWaitCancelledMessage)
+    }
+
+    func cancelQuestionWaiting() {
+        guard case .loading = questionState else {
+            return
+        }
+
+        questionTask?.cancel()
+        questionTask = nil
+        questionTaskToken = nil
+        resetHighlightSaveStateIfWaitingForQuickAction()
+        questionState = .cancelled(Self.quickActionWaitCancelledMessage)
     }
 
     func createQuizAttempt(
@@ -1045,7 +1130,7 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
-    private func explainSelection(documentID: Int, pageNumber: Int, selectedText: String) async {
+    private func explainSelection(documentID: Int, pageNumber: Int, selectedText: String, token: UUID) async {
         do {
             let highlight = try await highlightForCurrentSelection(
                 documentID: documentID,
@@ -1053,18 +1138,24 @@ final class LocalPDFStore: ObservableObject {
                 selectedText: selectedText
             )
             let explanation = try await apiClient.createExplanation(highlightID: highlight.id)
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  explanationTaskToken == token else {
                 return
             }
 
+            explanationTask = nil
+            explanationTaskToken = nil
             lastSavedHighlight = highlight
             highlightSaveState = .saved(highlight)
             explanationState = .loaded(explanation)
         } catch {
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  explanationTaskToken == token else {
                 return
             }
 
+            explanationTask = nil
+            explanationTaskToken = nil
             if case .saving = highlightSaveState {
                 highlightSaveState = .failed(error.localizedDescription)
             }
@@ -1072,7 +1163,7 @@ final class LocalPDFStore: ObservableObject {
         }
     }
 
-    private func createGlossaryTerms(documentID: Int, pageNumber: Int, selectedText: String) async {
+    private func createGlossaryTerms(documentID: Int, pageNumber: Int, selectedText: String, token: UUID) async {
         do {
             let highlight = try await highlightForCurrentSelection(
                 documentID: documentID,
@@ -1080,18 +1171,24 @@ final class LocalPDFStore: ObservableObject {
                 selectedText: selectedText
             )
             let glossaryTerms = try await apiClient.createGlossaryTerms(highlightID: highlight.id)
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  glossaryTaskToken == token else {
                 return
             }
 
+            glossaryTask = nil
+            glossaryTaskToken = nil
             lastSavedHighlight = highlight
             highlightSaveState = .saved(highlight)
             glossaryState = .loaded(glossaryTerms)
         } catch {
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  glossaryTaskToken == token else {
                 return
             }
 
+            glossaryTask = nil
+            glossaryTaskToken = nil
             if case .saving = highlightSaveState {
                 highlightSaveState = .failed(error.localizedDescription)
             }
@@ -1103,7 +1200,8 @@ final class LocalPDFStore: ObservableObject {
         documentID: Int,
         pageNumber: Int,
         selectedText: String,
-        maxQuizzes: Int? = nil
+        maxQuizzes: Int? = nil,
+        token: UUID
     ) async {
         do {
             let highlight = try await highlightForCurrentSelection(
@@ -1115,18 +1213,24 @@ final class LocalPDFStore: ObservableObject {
                 highlightID: highlight.id,
                 maxQuizzes: maxQuizzes
             )
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  quizTaskToken == token else {
                 return
             }
 
+            quizTask = nil
+            quizTaskToken = nil
             lastSavedHighlight = highlight
             highlightSaveState = .saved(highlight)
             quizState = .loaded(quizzes)
         } catch {
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  quizTaskToken == token else {
                 return
             }
 
+            quizTask = nil
+            quizTaskToken = nil
             if case .saving = highlightSaveState {
                 highlightSaveState = .failed(error.localizedDescription)
             }
@@ -1138,7 +1242,8 @@ final class LocalPDFStore: ObservableObject {
         documentID: Int,
         pageNumber: Int,
         selectedText: String,
-        question: String
+        question: String,
+        token: UUID
     ) async {
         do {
             let highlight = try await highlightForCurrentSelection(
@@ -1150,18 +1255,24 @@ final class LocalPDFStore: ObservableObject {
                 highlightID: highlight.id,
                 question: question
             )
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  questionTaskToken == token else {
                 return
             }
 
+            questionTask = nil
+            questionTaskToken = nil
             lastSavedHighlight = highlight
             highlightSaveState = .saved(highlight)
             questionState = .loaded(userQuestion)
         } catch {
-            guard currentDocument?.backendDocument?.id == documentID else {
+            guard currentDocument?.backendDocument?.id == documentID,
+                  questionTaskToken == token else {
                 return
             }
 
+            questionTask = nil
+            questionTaskToken = nil
             if case .saving = highlightSaveState {
                 highlightSaveState = .failed(error.localizedDescription)
             }
@@ -1187,9 +1298,16 @@ final class LocalPDFStore: ObservableObject {
             pageNumber: pageNumber,
             selectedText: selectedText
         )
+        try Task.checkCancellation()
         lastSavedHighlight = highlight
         highlightSaveState = .saved(highlight)
         return highlight
+    }
+
+    private func resetHighlightSaveStateIfWaitingForQuickAction() {
+        if case .saving = highlightSaveState {
+            highlightSaveState = .idle
+        }
     }
 
     private func restoreLastOpenedDocumentSessionIfAvailable() {
