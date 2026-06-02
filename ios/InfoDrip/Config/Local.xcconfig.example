@@ -2,4 +2,4 @@
 // Do not commit Local.xcconfig.
 // Keep http:/$()/ because xcconfig treats // as a comment.
 
-INFODRIP_BACKEND_BASE_URL = http:/$()/192.168.0.10:8000
+INFODRIP_BACKEND_BASE_URL = http:/$()/<BACKEND_HOST>:8000
