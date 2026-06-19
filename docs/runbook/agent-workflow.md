@@ -2,7 +2,7 @@
 
 ## 목적
 
-이 문서는 InfoDrip에서 spec-driven, PR-native, CI/check-gated 방식으로 작업을 진행하기 위한 agent runbook이다.
+이 문서는 InfoDrip에서 spec-driven, PR-native 방식으로 작업하고 backend CI와 human review를 함께 사용하는 agent runbook이다.
 
 기본 흐름은 다음과 같다.
 
@@ -11,13 +11,19 @@ Spec
 → Ticket
 → Agent implementation
 → PR
-→ CI/checks
+→ Validation / Checks
 → Review
 → Human Gate
 → Release
 ```
 
-`AGENTS.md`는 repo-level 규칙을 짧게 정의하고, 이 문서는 반복 가능한 절차와 검토 기준을 더 구체적으로 설명한다.
+관련 문서의 책임은 다음과 같이 나눈다.
+
+- `AGENTS.md`: repo-level agent policy
+- `.github/PULL_REQUEST_TEMPLATE.md`: PR body format
+- `docs/runbook/documentation-style.md`: documentation style, Korean-first 판단, literal 보존, reader 분류, privacy, docs-code consistency policy
+- `README.md`, `backend/README.md`, `docs/architecture.md`: 현재 product/backend 동작을 설명하는 reference
+- `docs/runbook/agent-workflow.md`: 반복 가능한 작업 절차와 검토 기준
 
 ---
 
@@ -43,10 +49,10 @@ Spec
 - risky decision, Human Gate Required ticket, merge, release를 판단한다.
 - physical iPad smoke 같은 manual QA를 수행하거나 최종 승인한다.
 
-### CI/checks
+### Validation / review
 
-- backend는 CI/required checks 자동화 대상이 될 수 있다.
-- iPad build는 당분간 local required check로 둔다.
+- backend 변경은 local backend validation과 backend CI로 확인한다.
+- iPad 변경은 가능한 환경에서 local iPad build validation을 수행한다.
 - physical iPad smoke는 manual QA로 둔다.
 - iOS CI 자동화는 deferred이며, 이 workflow 정리 작업에서 GitHub Actions workflow를 추가하지 않는다.
 
@@ -54,7 +60,7 @@ Spec
 
 ## Ticket 기준
 
-Ticket은 agent가 구현할 수 있을 만큼 scope, acceptance criteria, required checks가 정리된 작업 단위다.
+Ticket은 agent가 구현할 수 있을 만큼 scope, acceptance criteria, validation 기대가 정리된 작업 단위다.
 
 - 가능하면 one ticket = one branch/PR로 끝낸다.
 - strong dependency가 있으면 ticket order를 명시한다.
@@ -78,6 +84,8 @@ Ticket에는 최소한 다음을 포함한다.
 - Dependencies / Order
 
 Template은 `docs/runbook/ticket-template.md`를 사용한다.
+
+Ticket의 `Required Checks`는 작업 유형에 맞는 local validation, backend CI 확인, local iPad build validation, manual QA 기대를 뜻한다. GitHub branch protection이나 required status check enforcement를 전제로 하지 않는다.
 
 ---
 
@@ -170,53 +178,16 @@ Human Gate가 필요한 변경은 PR 본문에도 이유와 남은 판단 지점
 
 ## InfoDrip MVP Boundary
 
-InfoDrip은 개인용 local-first iPad PDF reading assistant / PDF 읽기 보조 앱이다.
+InfoDrip은 개인용 local-first iPad PDF reading assistant이며, selected text를 중심으로 읽기와 학습을 이어 가는 workflow다. 상세한 현재 동작과 deferred scope는 `AGENTS.md`, `README.md`, `backend/README.md`, `docs/architecture.md`를 기준으로 확인한다.
 
-핵심 흐름:
-
-```text
-PDF upload
-→ PDF reading
-→ text selection
-→ highlight persistence
-→ LLM explanation
-→ glossary extraction
-→ question answering
-→ quiz generation
-→ quiz attempt tracking
-→ review-again tracking
-→ review-again replay
-→ document-level study record lookup
-```
-
-작업자는 항상 다음 경계를 유지한다.
+작업자는 다음 핵심 경계를 유지한다.
 
 - iPad 앱에는 LLM API key를 저장하지 않는다.
-- LLM API key는 backend environment variable로만 관리한다.
-- iPad 앱은 backend API만 호출한다.
 - backend가 LLM provider를 호출한다.
-- PDF 전체를 매번 LLM에 보내지 않는다.
-- LLM 요청에는 selected text와 필요한 surrounding context만 보낸다.
-- LLM output은 가능한 JSON으로 받고 validation 후 저장한다.
-- 읽기 기록, 생성 결과, quiz attempt, review-again 기록은 DB에 저장한다.
-- LLM 요청별 provider, model, token usage, latency, status, estimated cost를 기록한다.
-- Primary review UX는 `quiz_attempts`와 review-again listing/replay 중심이다.
+- LLM 요청에는 selected text와 bounded same-page context만 사용하며, full private PDF text를 요청마다 보내지 않는다.
+- LLM output은 persistence 전에 validation한다.
+- Public artifact에는 secret이나 private data를 넣지 않는다.
 - `review_cards`는 backend/API capability지만 separate review card list/detail/edit/delete UX는 deferred다.
-
-MVP 밖:
-
-- OCR
-- RAG
-- vector DB
-- LLM streaming
-- user account system
-- payment
-- public deployment
-- complex spaced repetition
-- real-time collaboration
-- Android implementation
-- Apple Pencil handwriting recognition
-- full PDF annotation editor
 
 ---
 
@@ -236,60 +207,15 @@ MVP 밖:
 
 ## Documentation boundary
 
-Durable human-facing docs는 한국어로 작성한다.
+Documentation style, Korean-first 판단, code-facing literal 보존, primary reader 분류, UI/API/comments/tests scope 분리, privacy/security 예시, docs-code consistency 확인은 `docs/runbook/documentation-style.md`를 source of truth로 따른다.
 
-다만 code-facing identifier는 번역하지 않는다.
+Workflow에서는 다음 최소 경계를 유지한다.
 
-번역하지 않을 예:
-
-- `endpoint`
-- `route`
-- `table`
-- `model`
-- `schema`
-- `view`
-- `API`
-- `CLI`
-- command name
-- module name
-- class name
-- function name
-- config key
-- filename
-
-Public durable templates/runbooks는 repo에 둔다.
-
-- `AGENTS.md`
-- `docs/runbook/`
-- `.github/PULL_REQUEST_TEMPLATE.md`
-- approved public planning docs
-
-Active planning board, unfinished ideas, private notes는 `docs/local/`에 둔다.
-
-- `docs/local/NEXT.md`는 source of truth가 아니라 planning board다.
-- `docs/local/`은 commit하지 않는다.
-- `docs/local/` 내용은 repo 상태와 대조해서 사용한다.
-
-Public README, root README, `docs/architecture.md`는 approved ticket scope에 포함될 때만 수정한다.
-
-Public docs, prompt, log, screenshot, fixture, report에 넣지 않는다.
-
-- real API key
-- token
-- credential
-- provider account detail
-- private PDF content
-- raw private document text
-- private/local path
-- private endpoint detail
-- local DB content
-- uploaded file artifact
-- extracted full page text
-- generated LLM output 전문
-- temporary execution log 전문
-- private runtime data
-
-Public docs에는 sanitized example만 사용한다.
+- Durable human-facing docs는 Korean-first로 작성한다.
+- Code-facing identifier와 literal은 원문 그대로 보존한다.
+- Public artifact에는 secret, private data, private/local path를 넣지 않고 sanitized example만 사용한다.
+- `docs/local/**`는 local/planning-only material이며 current behavior의 source of truth가 아니다.
+- README와 `docs/architecture.md`는 approved ticket scope에 포함될 때만 수정한다.
 
 ---
 
@@ -316,7 +242,7 @@ Runtime validation은 생략할 수 있다.
 
 ### Backend runtime/code 변경
 
-Backend 변경 기본 required check:
+Backend 변경 기본 validation:
 
 - `backend/scripts/check.sh`
 
@@ -336,7 +262,7 @@ DB model 또는 schema를 바꿨다면 다음을 확인한다.
 - migration 또는 init path가 현재 repo 정책과 맞는지
 - sample data나 local DB 파일이 commit되지 않는지
 
-가능하면 backend required checks를 함께 실행한다.
+가능하면 backend validation을 함께 실행한다.
 
 ### LLM prompt/schema/provider 변경
 
@@ -354,7 +280,7 @@ Real provider smoke는 사용자가 명시적으로 요청하거나 local 환경
 
 ### iPad 변경
 
-당분간 iPad build는 local required check다.
+가능한 환경에서 iPad build는 local iPad build validation으로 수행한다.
 
 기본 command:
 
@@ -378,25 +304,10 @@ iOS CI 자동화는 deferred이며, 별도 approved ticket 없이 GitHub Actions
 
 ## PR 작성 기준
 
-PR 본문은 `.github/PULL_REQUEST_TEMPLATE.md`를 따른다.
-
-PR에는 다음이 빠지지 않게 한다.
-
-- Ticket ID
-- Risk Level
-- Human Gate Required
-- Summary
-- Changes
-- Acceptance Criteria
-- Out of scope / Deferred
-- Validation / Checks
-- Manual QA
-- Risks / Notes
-
-Docs-only PR에서는 Validation / Checks에 다음을 남길 수 있다.
-
-- `Not run (docs-only change)`
-- Changed docs reread 결과
+- PR body 구조는 `.github/PULL_REQUEST_TEMPLATE.md`를 따른다.
+- PR body는 Korean-first로 작성하고 code-facing identifier와 literal은 원문 그대로 보존한다.
+- Validation / Checks에는 실제로 수행한 command, backend CI 확인, local iPad build validation, manual QA 결과를 정직하게 기록한다.
+- Docs-only PR은 `Not run (docs-only change)`와 changed docs reread 결과를 기록할 수 있다.
 
 ---
 
