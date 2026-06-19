@@ -36,7 +36,7 @@ iPad 앱, backend, LLM provider 사이의 책임 boundary는 명확하게 유지
 - study action에는 selected text와 필요한 context만 사용한다. 매 요청마다 PDF 전체 text를 LLM provider로 보내는 흐름이 아니다.
 - Uploaded PDFs, local SQLite DB, runtime logs, `.env`, `Local.xcconfig`는 public artifact로 commit하지 않는다.
 
-자세한 architecture, ERD, 주요 API sequence, 구현 상태는 [docs/architecture.md](docs/architecture.md)를 참고한다.
+자세한 architecture boundary, backend data/API shape, 구현 상태는 [docs/architecture.md](docs/architecture.md)를 참고한다.
 
 Backend API, 환경 변수, 실행 방법, local backend validation은 [backend/README.md](backend/README.md)를 참고한다.
 
@@ -60,6 +60,7 @@ INFODRIP_BACKEND_BASE_URL = http:/$()/<BACKEND_HOST>:8000
 실제 iPad에서 접근하려면 backend는 loopback 전용 주소가 아니라 LAN에서 접근 가능한 host로 실행되어야 한다.
 
 ```bash
+cd backend
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -69,9 +70,9 @@ LLM API key와 provider secret은 iPad 앱에 넣지 않고 backend environment 
 
 ## Validation
 
-Backend CI는 GitHub Actions에서 `backend/scripts/check.sh`를 실행한다.
+Backend CI는 GitHub Actions에서 backend dependency를 sync한 뒤 `backend/scripts/check.sh`를 실행한다.
 
-이 script는 backend dependency sync 후 `ruff`와 `pytest` 기반 check를 실행하는 backend validation entrypoint다.
+이 script는 `backend/`로 이동해 `ruff`와 `pytest` 기반 check를 실행하는 backend validation entrypoint다.
 
 Local backend validation은 필요시 repo root에서 실행한다.
 
