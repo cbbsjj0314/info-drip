@@ -83,7 +83,7 @@ LLM request는 highlight의 `selected_text`와 필요한 same-page surrounding c
   - optional query: `document_id`
 - `DELETE /api/v1/quiz-attempts/{attempt_id}`
   - review-again 목록/detail에서 quiz attempt 제거
-  - 연결된 `review_cards`가 있으면 제거하지 않는다.
+  - 연결된 `review_cards`가 있으면 quiz attempt 삭제 요청은 `HTTP 409`로 거부되며, quiz attempt와 review card 모두 제거하지 않는다.
 
 보조 조회 endpoint:
 
