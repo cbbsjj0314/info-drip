@@ -212,6 +212,7 @@ Use this direction unless the user changes it.
 
 ## Documentation Boundary
 
+- For detailed documentation style, translation, and inventory classification guidance, follow `docs/runbook/documentation-style.md`.
 - Write durable human-facing docs in Korean by default.
 - Agent-facing instruction files may use English when useful for tool compatibility.
 - Do not translate code-facing identifiers such as `endpoint`, `route`, `table`, `model`, `schema`, `view`, `API`, `CLI`, command names, module names, class names, function names, config keys, or filenames.
